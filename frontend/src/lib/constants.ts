@@ -23,24 +23,56 @@ export const CONNECTION_COLORS: Record<string, string> = {
   live: '#10b981', delayed: '#f59e0b', offline: '#ef4444',
 }
 
-export const MAP_CONFIG = {
-  center: [79.5, 21.5] as [number, number],
-  zoom: 4.3,
-  style: {
+export const MAP_STYLES: Record<string, any> = {
+  road: {
     version: 8 as const,
     sources: {
       osm: {
         type: 'raster' as const,
         tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
         tileSize: 256,
-        attribution: '© OpenStreetMap contributors',
+        attribution: '© OpenStreetMap',
       },
     },
-    layers: [{
-      id: 'osm', type: 'raster' as const, source: 'osm',
-      paint: { 'raster-brightness-max': 0.45, 'raster-saturation': -0.6, 'raster-contrast': 0.1 },
-    }],
+    layers: [{ id: 'osm', type: 'raster' as const, source: 'osm' }],
   },
+  satellite: {
+    version: 8 as const,
+    sources: {
+      esri: {
+        type: 'raster' as const,
+        tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+        tileSize: 256,
+        attribution: 'Tiles &copy; Esri',
+      },
+    },
+    layers: [{ id: 'esri', type: 'raster' as const, source: 'esri' }],
+  },
+  terrain: {
+    version: 8 as const,
+    sources: {
+      osm: {
+        type: 'raster' as const,
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '© OpenStreetMap',
+      },
+      terrainSource: {
+        type: 'raster-dem' as const,
+        tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+        encoding: 'terrarium',
+        tileSize: 256,
+        maxzoom: 14,
+      },
+    },
+    layers: [{ id: 'osm', type: 'raster' as const, source: 'osm' }],
+    terrain: { source: 'terrainSource', exaggeration: 1.5 },
+  },
+}
+
+export const MAP_CONFIG = {
+  center: [79.5, 21.5] as [number, number],
+  zoom: 4.3,
 }
 
 /** Socket location updates arrive every tick; markers animate over this window. */

@@ -29,7 +29,11 @@ DELAY_TOLERANCE = timedelta(minutes=10)  # ASSUMPTION: ETA slip before 'delayed'
 
 class LocationService:
     def __init__(self):
-        self.redis = aioredis.from_url(config.REDIS_URL, decode_responses=True)
+        if config.REDIS_URL == "fakeredis":
+            import fakeredis.aioredis as fake_aioredis
+            self.redis = fake_aioredis.FakeRedis(decode_responses=True)
+        else:
+            self.redis = aioredis.from_url(config.REDIS_URL, decode_responses=True)
         self.buffer: list[dict] = []
         self.last_ts: dict[str, datetime] = {}
         self.status: dict[str, str] = {}

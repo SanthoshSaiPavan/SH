@@ -3,7 +3,7 @@ import type { Feature, FeatureCollection, LineString } from 'geojson'
 import type { GeoJSONSource, Map as MLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef, useState } from 'react'
-import { CONNECTION_COLORS, MAP_CONFIG, MARKER_ANIMATION_MS, PRIORITY_META } from '../lib/constants'
+import { CONNECTION_COLORS, MAP_CONFIG, MAP_STYLES, MARKER_ANIMATION_MS, PRIORITY_META } from '../lib/constants'
 import type { Hub, Shipment, Vehicle } from '../lib/schemas'
 
 export type RouteOverlay = { id: string; hubs: string[]; color: string; dashed?: boolean }
@@ -51,6 +51,7 @@ export default function LiveMap({ hubs, vehicles, shipments, routes = [], showPl
   const container = useRef<HTMLDivElement>(null)
   const map = useRef<MLMap | null>(null)
   const [ready, setReady] = useState(false)
+  const [mapStyle, setMapStyle] = useState<keyof typeof MAP_STYLES>('road')
   const vehicleMarkers = useRef(new Map<string, Animated>())
   const shipmentMarkers = useRef(new Map<string, maplibregl.Marker>())
   const hubMarkers = useRef(new Map<string, maplibregl.Marker>())
@@ -60,7 +61,7 @@ export default function LiveMap({ hubs, vehicles, shipments, routes = [], showPl
   // Map instance + animation loop
   useEffect(() => {
     if (!container.current) return
-    const m = new maplibregl.Map({ container: container.current, style: MAP_CONFIG.style, center: MAP_CONFIG.center, zoom: MAP_CONFIG.zoom, attributionControl: { compact: true } })
+    const m = new maplibregl.Map({ container: container.current, style: MAP_STYLES[mapStyle], center: MAP_CONFIG.center, zoom: MAP_CONFIG.zoom, attributionControl: { compact: true }, pitch: mapStyle === 'terrain' ? 45 : 0 })
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
     m.on('load', () => {
       m.addSource('planned', { type: 'geojson', data: EMPTY })
@@ -178,15 +179,63 @@ export default function LiveMap({ hubs, vehicles, shipments, routes = [], showPl
     const m = map.current
     if (!m) return
     if (!ready) return
-    const planned: RouteOverlay[] = showPlannedRoutes
-        ? Object.values(vehicles).map((v) => ({
-          id: v.id, color: '#6366f1',
-          hubs: v.planned_route.slice(Math.max(0, v.current_stop_index - (v.status === 'at_hub' ? 0 : 1))),
-        }))
-        : []
-    ;(m.getSource('planned') as GeoJSONSource | undefined)?.setData(lineFeatures(planned, hubs))
-    ;(m.getSource('overlay') as GeoJSONSource | undefined)?.setData(lineFeatures(routes, hubs))
-  }, [ready, vehicles, hubs, routes, showPlannedRoutes])
+    
+    // We update the data whenever style changes or data changes.
+    // To handle async style changes, we also listen to 'styledata' event below.
+    const updateRoutes = () => {
+      const planned: RouteOverlay[] = showPlannedRoutes
+          ? Object.values(vehicles).map((v) => ({
+            id: v.id, color: '#4285F4', // Google Maps Blue
+            hubs: v.planned_route.slice(Math.max(0, v.current_stop_index - (v.status === 'at_hub' ? 0 : 1))),
+          }))
+          : []
+      ;(m.getSource('planned') as GeoJSONSource | undefined)?.setData(lineFeatures(planned, hubs))
+      ;(m.getSource('overlay') as GeoJSONSource | undefined)?.setData(lineFeatures(routes, hubs))
+    }
+    updateRoutes()
+  }, [ready, vehicles, hubs, routes, showPlannedRoutes, mapStyle])
+
+  // Dynamic style switching
+  useEffect(() => {
+    if (map.current && ready) {
+      map.current.setStyle(MAP_STYLES[mapStyle]);
+      if (mapStyle === 'terrain') {
+        map.current.setPitch(60);
+        map.current.setBearing(30);
+      } else {
+        map.current.setPitch(0);
+        map.current.setBearing(0);
+      }
+      
+      const onStyleData = () => {
+        if (!map.current) return;
+        if (!map.current.getSource('planned')) {
+          map.current.addSource('planned', { type: 'geojson', data: EMPTY })
+          // Solid, thicker line like Google Maps
+          map.current.addLayer({ id: 'planned', type: 'line', source: 'planned', paint: { 'line-color': ['get', 'color'], 'line-width': 4, 'line-opacity': 0.9 } })
+        }
+        if (!map.current.getSource('overlay')) {
+          map.current.addSource('overlay', { type: 'geojson', data: EMPTY })
+          map.current.addLayer({ id: 'overlay-glow', type: 'line', source: 'overlay', paint: { 'line-color': ['get', 'color'], 'line-width': 9, 'line-opacity': 0.25, 'line-blur': 4 } })
+          map.current.addLayer({ id: 'overlay', type: 'line', source: 'overlay', paint: { 'line-color': ['get', 'color'], 'line-width': 4 } })
+        }
+        // Force update of routes since we recreated the empty sources
+        const planned: RouteOverlay[] = showPlannedRoutes
+            ? Object.values(vehicles).map((v) => ({
+              id: v.id, color: '#4285F4',
+              hubs: v.planned_route.slice(Math.max(0, v.current_stop_index - (v.status === 'at_hub' ? 0 : 1))),
+            }))
+            : []
+        ;(map.current.getSource('planned') as GeoJSONSource | undefined)?.setData(lineFeatures(planned, hubs))
+        ;(map.current.getSource('overlay') as GeoJSONSource | undefined)?.setData(lineFeatures(routes, hubs))
+      }
+      
+      map.current.on('styledata', onStyleData)
+      return () => {
+        map.current?.off('styledata', onStyleData)
+      }
+    }
+  }, [mapStyle, ready, vehicles, hubs, routes, showPlannedRoutes]);
 
   useEffect(() => {
     if (focus && map.current) map.current.flyTo({ center: [focus.lng, focus.lat], zoom: focus.zoom ?? 7 })
@@ -195,7 +244,25 @@ export default function LiveMap({ hubs, vehicles, shipments, routes = [], showPl
   return (
     <div className={`relative ${className ?? ''}`}>
       <div ref={container} className="w-full h-full rounded-2xl overflow-hidden" />
-      <div className="absolute left-3 bottom-3 glass px-3 py-2 text-[11px] text-muted space-y-1 pointer-events-none">
+      
+      {/* Map Style Switcher */}
+      <div className="absolute top-3 left-3 bg-surface border border-[var(--border-subtle)] rounded-lg overflow-hidden flex shadow-lg z-10">
+        {(['road', 'satellite', 'terrain'] as const).map((style) => (
+          <button
+            key={style}
+            onClick={() => setMapStyle(style)}
+            className={`px-3 py-1.5 text-xs font-medium capitalize transition-colors ${
+              mapStyle === style 
+                ? 'bg-primary/20 text-ink' 
+                : 'text-muted hover:text-ink hover:bg-surface'
+            }`}
+          >
+            {style === 'terrain' ? '3D' : style}
+          </button>
+        ))}
+      </div>
+
+      <div className="absolute left-3 bottom-3 glass px-3 py-2 text-[11px] text-muted space-y-1 pointer-events-none z-10">
         <div className="flex gap-3">
           <span>🚚 vehicle</span><span>📦 misplaced</span>
           <span><span style={{ color: '#10b981' }}>●</span> live</span>

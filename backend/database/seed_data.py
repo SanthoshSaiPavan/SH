@@ -227,12 +227,17 @@ def seed_if_empty() -> bool:
 
 def clear_live_state() -> None:
     """Drop Redis vehicle state so stale positions don't survive a reseed."""
-    import redis
+    if config.REDIS_URL == "fakeredis":
+        return
+    try:
+        import redis
 
-    r = redis.Redis.from_url(config.REDIS_URL)
-    keys = list(r.scan_iter("vehicle:*"))
-    if keys:
-        r.delete(*keys)
+        r = redis.Redis.from_url(config.REDIS_URL)
+        keys = list(r.scan_iter("vehicle:*"))
+        if keys:
+            r.delete(*keys)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

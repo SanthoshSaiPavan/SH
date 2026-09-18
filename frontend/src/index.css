@@ -2,12 +2,12 @@
 
 /* PiggyShip design system — dark control-tower theme (from the implementation plan). */
 :root {
-  --bg-primary: #0a0e1a;
-  --bg-secondary: #111827;
-  --bg-surface: #1e2538;
-  --bg-glass: rgba(30, 37, 56, 0.7);
-  --text-primary: #f0f4ff;
-  --text-secondary: #8892b0;
+  --bg-primary: #f8fafc;
+  --bg-secondary: #ffffff;
+  --bg-surface: #f1f5f9;
+  --bg-glass: rgba(255, 255, 255, 0.7);
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
   --text-accent: #64ffda;
   --accent-primary: #6366f1;
   --accent-success: #10b981;

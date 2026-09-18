@@ -6,12 +6,41 @@ Values marked ASSUMPTION are not given by the implementation plan and were
 chosen as reasonable demo defaults; tune them here.
 """
 import os
+from pathlib import Path
+import socket
+from dotenv import load_dotenv
+
+load_dotenv()
+
+BASE_DIR = Path(__file__).resolve().parent
+
+def _is_port_reachable(host: str, port: int, timeout: float = 0.5) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 # --- Infrastructure -------------------------------------------------------
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql+psycopg://piggyship:piggyship@localhost:5432/piggyship"
-)
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+_default_pg = "postgresql+psycopg://piggyship:piggyship@localhost:5432/piggyship"
+_raw_db = os.getenv("DATABASE_URL")
+if not _raw_db:
+    if _is_port_reachable("localhost", 5432):
+        DATABASE_URL = _default_pg
+    else:
+        DATABASE_URL = f"sqlite:///{BASE_DIR / 'piggyship.db'}"
+else:
+    DATABASE_URL = _raw_db
+
+_raw_redis = os.getenv("REDIS_URL")
+if not _raw_redis:
+    if _is_port_reachable("localhost", 6379):
+        REDIS_URL = "redis://localhost:6379/0"
+    else:
+        REDIS_URL = "fakeredis"
+else:
+    REDIS_URL = _raw_redis
+
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
 
 # --- Auth -----------------------------------------------------------------
