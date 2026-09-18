@@ -157,40 +157,48 @@ def build_seed():
     return list(hubs.values()), list(routes.values()), list(vehicles.values()), shipments, users
 
 
+PRIORITY_MIX = ["critical"] * 3 + ["high"] * 7 + ["medium"] * 13 + ["low"] * 7
+
+
+def carried_shipment(rng, now, hubs, v, origin_idx: int, shipment_id: str, tracking: str,
+                     priority: str, last_scan_at) -> Shipment:
+    """A shipment riding vehicle `v` from planned_route[origin_idx] to a later stop on its route."""
+    route = v.planned_route
+    origin = route[origin_idx]
+    destination = route[rng.randint(max(origin_idx + 1, v.current_stop_index), len(route) - 1)]
+    expected = route[origin_idx: route.index(destination, origin_idx) + 1]
+    weight = round(rng.uniform(20, 400), 1)
+    volume = round(weight / rng.uniform(150, 300), 2)
+    remaining = sum(_leg_hours(hubs[a], hubs[b], v.speed_kmh) for a, b in zip(expected, expected[1:]))
+    flags = []
+    if v.hazmat_certifications and rng.random() < 0.5:
+        flags.append("hazmat_class_3")
+    elif rng.random() < 0.1:
+        flags.append("fragile")
+    return Shipment(
+        id=shipment_id, tracking_number=tracking, origin_hub_id=origin,
+        destination_hub_id=destination, current_hub_id=None, expected_route=expected,
+        actual_route=[origin], status="in_transit", priority=priority, handling_flags=flags,
+        weight_kg=weight, volume_cbm=volume,
+        deadline=now + timedelta(hours=remaining * rng.uniform(1.4, 2.5) + 2),
+        current_lat=v.current_lat, current_lng=v.current_lng, current_vehicle_id=v.id,
+        last_scan_at=last_scan_at,
+    )
+
+
 def _build_shipments(rng, now, hubs, vehicles):
     """30 in-transit shipments riding national vehicles, plus scripted SHP-501."""
-    shipments = []
-    priorities = ["critical"] * 3 + ["high"] * 7 + ["medium"] * 13 + ["low"] * 7
+    priorities = list(PRIORITY_MIX)
     rng.shuffle(priorities)
     carriers = [v for v in vehicles.values() if not v.id.startswith("TRUCK-")]
     date_tag = now.strftime("%Y%m%d")
+    shipments = []
     for n in range(30):
         v = carriers[n % len(carriers)]
-        route = v.planned_route
-        idx = v.current_stop_index
-        origin = route[max(idx - 1, 0)]
-        destination = route[rng.randint(idx, len(route) - 1)]
-        expected = route[max(idx - 1, 0): route.index(destination) + 1]
-        weight = round(rng.uniform(20, 400), 1)
-        volume = round(weight / rng.uniform(150, 300), 2)
-        remaining = sum(
-            _leg_hours(hubs[a], hubs[b], v.speed_kmh)
-            for a, b in zip([None] + expected, expected) if a
-        )
-        deadline = now + timedelta(hours=remaining * rng.uniform(1.4, 2.5) + 2)
-        flags = []
-        if v.hazmat_certifications and rng.random() < 0.5:
-            flags.append("hazmat_class_3")
-        elif rng.random() < 0.1:
-            flags.append("fragile")
-        shipments.append(Shipment(
-            id=f"SHP-{date_tag}-{n + 1:04d}", tracking_number=f"PGS{date_tag}{n + 1:04d}",
-            origin_hub_id=origin, destination_hub_id=destination, current_hub_id=None,
-            expected_route=expected, actual_route=[origin], status="in_transit",
-            priority=priorities[n], handling_flags=flags, weight_kg=weight, volume_cbm=volume,
-            deadline=deadline, current_lat=v.current_lat, current_lng=v.current_lng,
-            current_vehicle_id=v.id, last_scan_at=now - timedelta(hours=_hours_since_departure(hubs, v)),
-        ))
+        shipments.append(carried_shipment(
+            rng, now, hubs, v, max(v.current_stop_index - 1, 0), f"SHP-{date_tag}-{n + 1:04d}",
+            f"PGS{date_tag}{n + 1:04d}", priorities[n],
+            now - timedelta(hours=_hours_since_departure(hubs, v))))
 
     wgl = hubs["HUB-WGL-01"]
     shipments.append(Shipment(

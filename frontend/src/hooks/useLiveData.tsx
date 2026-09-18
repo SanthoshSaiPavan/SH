@@ -153,6 +153,11 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     refreshDashboard().catch(() => undefined)
   })
 
+  useSocketEvent<{ shipment_id: string }>('shipment:created', (d) => {
+    refreshShipment(d.shipment_id).catch(() => undefined)
+    refreshDashboard().catch(() => undefined)
+  })
+
   useSocketEvent<unknown>('piggyback:recommendation', (raw) => {
     const rec = RecommendationSchema.safeParse(raw)
     if (!rec.success) return
