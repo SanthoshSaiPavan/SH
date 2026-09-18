@@ -14,21 +14,25 @@ the explanation agent.
 
 ## Setup
 
-```bash
-# 1. PostgreSQL + Redis (podman or docker)
-systemctl --user start podman.socket     # podman only
-cd docker && docker compose up -d && cd ..
+Commands are for Windows PowerShell (Python 3, Node.js and Docker Desktop installed).
+
+```powershell
+# 1. PostgreSQL + Redis (Docker Desktop must be running)
+cd docker
+docker compose up -d
+cd ..
 
 # 2. Backend
 cd backend
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m database.seed_data   # drop + reseed demo data (also clears Redis state)
-.venv/bin/uvicorn app:socket_app --port 8000
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+.venv\Scripts\python -m database.seed_data   # drop + reseed demo data (also clears Redis state)
+.venv\Scripts\uvicorn app:socket_app --port 8000
 
 # 3. Frontend (new terminal)
 cd frontend
 npm install
-npm run dev                               # http://localhost:5173 (proxies /api and /socket.io)
+npm run dev                                    # http://localhost:5173 (proxies /api and /socket.io)
 ```
 
 The decision agent calls Ollama at `OLLAMA_URL` (default `http://localhost:11434`) with
@@ -58,9 +62,12 @@ LIVE GPS: switch the toggle to **LIVE GPS**, log in as a driver on a phone and o
 `/driver`. Browsers only allow geolocation on HTTPS or localhost.
 
 ## Tests
-```bash
-cd backend && .venv/bin/pytest -q          # engine tests (no DB needed)
-cd frontend && npm run build && npx oxlint src
+```powershell
+cd backend
+.venv\Scripts\pytest -q                       # engine tests (no DB needed)
+cd ..\frontend
+npm run build
+npx oxlint src
 ```
 
 ## Where the logic lives
