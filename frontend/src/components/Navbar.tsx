@@ -1,9 +1,9 @@
 import { NavLink } from 'react-router-dom'
-import { useAuth } from '../hooks/useAuth'
 import { useLiveData } from '../hooks/useLiveData'
 import { useSocket } from '../hooks/useSocket'
 import { time } from '../lib/format'
 import ModeToggle from './ModeToggle'
+import UserMenu from './UserMenu'
 
 const LINKS = [
   ['/', 'Dashboard'], ['/shipments', 'Shipments'], ['/recovery', 'Recovery'],
@@ -11,7 +11,6 @@ const LINKS = [
 ] as const
 
 export default function Navbar() {
-  const { user, logout } = useAuth()
   const { connected } = useSocket()
   const { sim, muted, setMuted } = useLiveData()
   return (
@@ -36,8 +35,7 @@ export default function Navbar() {
           {connected ? 'Live' : 'Reconnecting…'}
         </span>
         <button className="text-muted hover:text-ink" onClick={() => setMuted(!muted)} title="Alert sounds">{muted ? '🔇' : '🔔'}</button>
-        <span className="text-muted">{user?.username} · {user?.role}</span>
-        <button className="btn" onClick={logout}>Logout</button>
+        <UserMenu />
       </div>
     </header>
   )

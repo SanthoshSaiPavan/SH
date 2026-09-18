@@ -114,11 +114,6 @@ export const SimStatusSchema = z.object({
 })
 export type SimStatus = z.infer<typeof SimStatusSchema>
 
-export const LoginFormSchema = z.object({
-  username: z.string().trim().min(1, 'Username is required').max(64),
-  password: z.string().min(1, 'Password is required').max(128),
-})
-
 export const AlertSchema = z.object({
   shipment_id: z.string(), type: z.string(), severity: z.string(),
   message: z.string(), priority: z.string().optional(), severity_score: z.number().optional(),

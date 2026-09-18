@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAuth } from '../hooks/useAuth'
+import UserMenu from '../components/UserMenu'
 import { useSocket } from '../hooks/useSocket'
 import { api } from '../lib/api'
 import { TEST_DRIVER_USERNAME } from '../lib/constants'
@@ -13,7 +14,7 @@ const SEND_INTERVAL_MS = 2000
  *  Testing exception: for TEST_DRIVER_USERNAME the page keeps resending the last known
  *  position (or the vehicle's current one) while GPS is unavailable. */
 export default function Driver() {
-  const { user, logout } = useAuth()
+  const { user } = useAuth()
   const { socket, connected } = useSocket()
   const vehicleId = user?.vehicle_ids[0]
   const allowFallback = user?.username === TEST_DRIVER_USERNAME
@@ -85,17 +86,21 @@ export default function Driver() {
   }, [allowFallback, sharing, gpsDown, noGeolocation, vehicleId, send])
 
   return (
-    <div className="min-h-full grid place-items-center p-6">
-      <div className="glass p-6 w-full max-w-sm space-y-4 text-center">
-        <div className="text-4xl">🚚</div>
-        <div className="text-xl font-bold mono">{vehicleId ?? 'No vehicle assigned'}</div>
-        <div className="text-xs text-muted">{user?.username} · socket {connected ? 'connected' : 'reconnecting…'}</div>
-        <button className={`btn w-full justify-center ${sharing ? 'btn-danger' : 'btn-success'}`} disabled={!vehicleId}
-          onClick={() => { setSharing(!sharing); setGpsDown(false) }}>{sharing ? 'Stop sharing' : 'Start LIVE GPS'}</button>
-        <div className="text-sm">{sharing && noGeolocation && sent === 0 ? 'Geolocation not supported on this device' : status}</div>
-        {fix && <div className="text-xs text-muted mono">{fix.lat.toFixed(5)}, {fix.lng.toFixed(5)} · {fix.speed.toFixed(0)} km/h · sent {sent}</div>}
-        <p className="text-[11px] text-muted">The dashboard must be in LIVE GPS mode. Phones only allow geolocation on HTTPS (or localhost).</p>
-        <button className="btn" onClick={logout}>Logout</button>
+    <div className="min-h-full flex flex-col">
+      <header className="flex justify-end px-5 h-14 items-center">
+        <UserMenu />
+      </header>
+      <div className="flex-1 grid place-items-center p-6">
+        <div className="glass p-6 w-full max-w-sm space-y-4 text-center">
+          <div className="text-4xl">🚚</div>
+          <div className="text-xl font-bold mono">{vehicleId ?? 'No vehicle assigned'}</div>
+          <div className="text-xs text-muted">{user?.username} · socket {connected ? 'connected' : 'reconnecting…'}</div>
+          <button className={`btn w-full justify-center ${sharing ? 'btn-danger' : 'btn-success'}`} disabled={!vehicleId}
+            onClick={() => { setSharing(!sharing); setGpsDown(false) }}>{sharing ? 'Stop sharing' : 'Start LIVE GPS'}</button>
+          <div className="text-sm">{sharing && noGeolocation && sent === 0 ? 'Geolocation not supported on this device' : status}</div>
+          {fix && <div className="text-xs text-muted mono">{fix.lat.toFixed(5)}, {fix.lng.toFixed(5)} · {fix.speed.toFixed(0)} km/h · sent {sent}</div>}
+          <p className="text-[11px] text-muted">The dashboard must be in LIVE GPS mode. Phones only allow geolocation on HTTPS (or localhost).</p>
+        </div>
       </div>
     </div>
   )
