@@ -8,14 +8,23 @@ import { SocketProvider } from './hooks/useSocket'
 import Analytics from './pages/Analytics'
 import Dashboard from './pages/Dashboard'
 import Driver from './pages/Driver'
-import Login from './pages/Login'
 import Recovery from './pages/Recovery'
 import Shipments from './pages/Shipments'
 import Simulation from './pages/Simulation'
 
+/** Shown while the app signs in as the selected demo account (no login page). */
+function SigningIn() {
+  const { error } = useAuth()
+  return (
+    <div className="min-h-full grid place-items-center p-6 text-sm text-muted">
+      {error ? `Can't reach the backend (${error}). Retrying…` : 'Signing in…'}
+    </div>
+  )
+}
+
 function OperatorShell({ children }: { children: ReactNode }) {
   const { user, isOperator } = useAuth()
-  if (!user) return <Navigate to="/login" replace />
+  if (!user) return <SigningIn />
   if (!isOperator) return <Navigate to="/driver" replace />
   return (
     <div className="min-h-full flex flex-col">
@@ -27,9 +36,10 @@ function OperatorShell({ children }: { children: ReactNode }) {
 }
 
 function DriverShell() {
-  const { user } = useAuth()
-  if (!user) return <Navigate to="/login" replace />
-  return <Driver />
+  const { user, isOperator } = useAuth()
+  if (!user) return <SigningIn />
+  if (isOperator) return <Navigate to="/" replace />
+  return <Driver key={user.username} />
 }
 
 export default function App() {
@@ -39,7 +49,6 @@ export default function App() {
         <LiveDataProvider>
           <BrowserRouter>
             <Routes>
-              <Route path="/login" element={<Login />} />
               <Route path="/driver" element={<DriverShell />} />
               <Route path="/" element={<OperatorShell><Dashboard /></OperatorShell>} />
               <Route path="/shipments" element={<OperatorShell><Shipments /></OperatorShell>} />

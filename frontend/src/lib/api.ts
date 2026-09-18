@@ -23,6 +23,7 @@ export const session = {
   },
   save(token: string, user: SessionUser) { safeSet(TOKEN_KEY, token); safeSet(USER_KEY, JSON.stringify(user)) },
   clear() { safeSet(TOKEN_KEY, null); safeSet(USER_KEY, null) },
+  clearToken() { safeSet(TOKEN_KEY, null) },
 }
 
 export class ApiError extends Error {
@@ -36,8 +37,9 @@ async function request(method: string, path: string, body?: unknown): Promise<un
   if (token) headers.Authorization = `Bearer ${token}`
   const res = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
   if (res.status === 401 && path !== '/api/auth/login') {
-    session.clear()
-    window.location.assign('/login')
+    // Token expired or signed with an old secret: reload and sign in again as the same demo account.
+    session.clearToken()
+    window.location.reload()
   }
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null
   if (!res.ok) {

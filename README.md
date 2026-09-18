@@ -35,7 +35,11 @@ The decision agent calls Ollama at `OLLAMA_URL` (default `http://localhost:11434
 `OLLAMA_MODEL` (default `gemma4:31b-cloud`, which needs internet). If Ollama is unreachable,
 the agent returns a deterministic explanation built from the same scores.
 
-### Demo logins
+### Demo accounts
+There is no login page. The app signs in as `admin` on first load, and the user icon in the top
+right switches between Admin, Operator and Driver (TRUCK-101 … 104). The backend still issues a
+JWT per account and enforces roles.
+
 | User | Password | Role |
 |---|---|---|
 | `admin` | `admin123` | ADMIN |
@@ -43,7 +47,7 @@ the agent returns a deterministic explanation built from the same scores.
 | `driver101` … `driver104` | `driver123` | DRIVER (TRUCK-101 … 104) |
 
 ## Demo script (Module 7 scenario)
-1. Log in as `operator`. SHP-501 (🟠 High, 120 kg) is flagged `wrong_hub` at Warangal
+1. Pick **Operator** from the user menu (top right). SHP-501 (🟠 High, 120 kg) is flagged `wrong_hub` at Warangal
    (it should have gone Hyderabad → Vijayawada directly).
 2. Click **DEMO SIMULATION**. Trucks go live, and the banner shows **PIGGYBACK OPPORTUNITY
    DETECTED: SHP-501 → TRUCK-102** with pickup/delivery ETA, free capacity, cost and saving.
@@ -54,8 +58,8 @@ the agent returns a deterministic explanation built from the same scores.
 5. Use **Trigger misplacement** for more cases (wrong hub / wrong vehicle / stuck);
    🔴 critical shipments scoring > 85 are auto-executed.
 
-LIVE GPS: switch the toggle to **LIVE GPS**, log in as a driver on a phone and open
-`/driver`. Browsers only allow geolocation on HTTPS or localhost.
+LIVE GPS: switch the toggle to **LIVE GPS**, open the app on a phone and pick a
+**Driver** from the user menu. Browsers only allow geolocation on HTTPS or localhost.
 
 ## Tests
 ```bash

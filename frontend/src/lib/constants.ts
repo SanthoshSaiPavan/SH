@@ -51,3 +51,15 @@ export const MARKER_ANIMATION_MS = 2000
 export const STRATEGY_CHART_COLORS: Record<StrategyType, string> = {
   piggyback: '#3987e5', reroute: '#d95926', dedicated: '#199e70', hold: '#c98500',
 }
+
+/** The seeded demo accounts (database/seed_data.py). There is no login page: the app signs in
+ *  as one of these, and the user menu switches between them. The backend still issues JWTs and
+ *  enforces roles on every request. */
+export const DEMO_ACCOUNTS = [
+  { username: 'admin', password: 'admin123', label: 'Admin' },
+  { username: 'operator', password: 'operator123', label: 'Operator' },
+  { username: 'driver101', password: 'driver123', label: 'Driver · TRUCK-101' },
+  { username: 'driver102', password: 'driver123', label: 'Driver · TRUCK-102' },
+  { username: 'driver103', password: 'driver123', label: 'Driver · TRUCK-103' },
+  { username: 'driver104', password: 'driver123', label: 'Driver · TRUCK-104' },
+] as const

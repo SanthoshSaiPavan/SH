@@ -16,7 +16,7 @@ const SocketContext = createContext<SocketValue | null>(null)
 /** One Socket.IO connection per session: JWT in the handshake, auto-reconnect with
  *  backoff, and rooms re-joined after every reconnect. */
 export function SocketProvider({ children }: { children: ReactNode }) {
-  const { token, logout } = useAuth()
+  const { token, reauth } = useAuth()
   const [socket, setSocket] = useState<Socket | null>(null)
   const [connected, setConnected] = useState(false)
   const [connectionId, setConnectionId] = useState(0)
@@ -39,7 +39,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
     s.on('disconnect', () => setConnected(false))
     s.on('connect_error', (err) => {
       setConnected(false)
-      if (err.message === 'invalid token') logout()
+      if (err.message === 'invalid token') reauth()
     })
     setSocket(s)
     return () => {
@@ -47,7 +47,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       setSocket(null)
       setConnected(false)
     }
-  }, [token, logout])
+  }, [token, reauth])
 
   const joinRoom = useCallback((room: string) => {
     rooms.current.add(room)
