@@ -14,6 +14,7 @@ import bcrypt
 import config
 from database.db import Base, SessionLocal, engine
 from database.models import Hub, Route, Shipment, User, Vehicle
+from engines.fleet_progress import record_scan
 from utils import clock, roads
 from utils.geo import haversine, interpolate
 
@@ -183,15 +184,17 @@ def carried_shipment(rng, now, hubs, v, origin_idx: int, shipment_id: str, track
         flags.append("hazmat_class_3")
     elif rng.random() < 0.1:
         flags.append("fragile")
-    return Shipment(
+    shipment = Shipment(
         id=shipment_id, tracking_number=tracking, origin_hub_id=origin,
         destination_hub_id=destination, current_hub_id=None, expected_route=expected,
         actual_route=[origin], status="in_transit", priority=priority, handling_flags=flags,
         weight_kg=weight, volume_cbm=volume,
         deadline=now + timedelta(hours=remaining * rng.uniform(1.4, 2.5) + 2),
         current_lat=v.current_lat, current_lng=v.current_lng, current_vehicle_id=v.id,
-        last_scan_at=last_scan_at,
+        manifest_vehicle_id=v.id, last_scan_at=last_scan_at,
     )
+    record_scan(shipment, "load", last_scan_at, origin, v.id)
+    return shipment
 
 
 def _build_shipments(rng, now, hubs, vehicles):
@@ -209,19 +212,23 @@ def _build_shipments(rng, now, hubs, vehicles):
             now - timedelta(hours=_hours_since_departure(hubs, v))))
 
     wgl = hubs["HUB-WGL-01"]
-    shipments.append(Shipment(
+    shp_501 = Shipment(
         id="SHP-501", tracking_number="PGS-DEMO-501", origin_hub_id="HUB-HYD-01",
         destination_hub_id="HUB-VJA-01", current_hub_id="HUB-WGL-01",
         expected_route=["HUB-HYD-01", "HUB-VJA-01"], actual_route=["HUB-HYD-01", "HUB-WGL-01"],
         status="in_transit", priority="high", handling_flags=[], weight_kg=120, volume_cbm=0.6,
         deadline=now + timedelta(hours=10), current_lat=wgl.lat, current_lng=wgl.lng,
         current_vehicle_id=None, last_scan_at=now - timedelta(minutes=20),
-    ))
+    )
+    record_scan(shp_501, "hub_scan", now - timedelta(hours=3), "HUB-HYD-01")
+    record_scan(shp_501, "excess", shp_501.last_scan_at, "HUB-WGL-01", expected=False,
+                note="unloaded at a hub not on its expected route")
+    shipments.append(shp_501)
 
     t102 = vehicles["TRUCK-102"]
     vja = hubs["HUB-VJA-01"]
     eta_vja = roads.km_to_hub("HUB-NAG-01", vja, t102.current_lat, t102.current_lng) / t102.speed_kmh
-    shipments.append(Shipment(
+    shp_311 = Shipment(
         id="SHP-311", tracking_number="PGS-DEMO-311", origin_hub_id="HUB-NAG-01",
         destination_hub_id="HUB-VJA-01", current_hub_id=None,
         expected_route=["HUB-NAG-01", "HUB-VJA-01"], actual_route=["HUB-NAG-01"],
@@ -229,8 +236,11 @@ def _build_shipments(rng, now, hubs, vehicles):
         volume_cbm=1.2,
         deadline=now + timedelta(hours=eta_vja + SHP_311_DEADLINE_SLACK_HOURS),
         current_lat=t102.current_lat, current_lng=t102.current_lng, current_vehicle_id="TRUCK-102",
+        manifest_vehicle_id="TRUCK-102",
         last_scan_at=now - timedelta(hours=_hours_since_departure(hubs, t102)),
-    ))
+    )
+    record_scan(shp_311, "load", shp_311.last_scan_at, "HUB-NAG-01", "TRUCK-102")
+    shipments.append(shp_311)
     return shipments
 
 

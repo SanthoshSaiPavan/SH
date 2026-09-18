@@ -1,11 +1,13 @@
-"""MODULE 1: Misplaced shipment detection.
+"""MODULE 1: Misplaced shipment detection from scan events.
 
-Checks run in the plan's order; the first failing check determines the
-misplacement type:
-    route deviation -> 'wrong_hub'
-    geofence        -> 'wrong_vehicle'
-    time anomaly    -> 'stuck'
-    scan gap        -> 'stuck'
+A parcel has no GPS, so the only evidence is its scan trail (`scan_events`,
+`actual_route`, `last_scan_at`) and its manifest. The parcel's position and
+`current_vehicle_id` are simulator ground truth and are never read here.
+Checks run in order; the first failing one sets the misplacement type:
+    excess at hub                    -> 'wrong_hub'
+    manifest mismatch at loading     -> 'wrong_vehicle'
+    short at unload                  -> 'stuck'
+    time anomaly / scan gap          -> 'stuck'
 """
 from __future__ import annotations
 
@@ -14,7 +16,6 @@ from datetime import datetime
 
 import config
 from utils import clock, roads
-from utils.geo import haversine, point_to_line_distance
 from utils.scoring import clamp01
 
 ACTIVE_STATUSES = ("in_transit", "delayed")
@@ -37,7 +38,7 @@ class AnomalyResult:
         return data
 
 
-def _expected_segment(shipment):
+def expected_segment(shipment):
     """(previous expected hub id, next expected hub id) given scans so far."""
     expected = shipment.expected_route or []
     scanned = [h for h in (shipment.actual_route or []) if h in expected]
@@ -50,31 +51,60 @@ def _expected_segment(shipment):
     return expected[pos], nxt
 
 
+def remaining_route(vehicle) -> list:
+    if vehicle.status == "completed":
+        return []
+    return list((vehicle.planned_route or [])[vehicle.current_stop_index or 0:])
+
+
+def vehicle_serves(vehicle, hub_id: str | None) -> bool:
+    """The loading check: does the vehicle's remaining route still reach `hub_id`?"""
+    return hub_id is not None and hub_id in remaining_route(vehicle)
+
+
+def _scans(shipment) -> list:
+    return sorted(getattr(shipment, "scans", None) or [], key=lambda e: e.scanned_at)
+
+
+def last_custody_scan(shipment):
+    """Latest scan of the parcel itself (a 'short' records its absence, not its custody)."""
+    return next((e for e in reversed(_scans(shipment)) if e.event_type != "short"), None)
+
+
+def on_vehicle_by_scans(shipment) -> bool:
+    """True if the scan trail says the parcel is aboard a vehicle (loaded, not since unloaded)."""
+    last = last_custody_scan(shipment)
+    return last is not None and last.vehicle_id is not None and last.event_type != "unload"
+
+
 def check_route_deviation(shipment) -> str | None:
-    """'wrong_hub' if the shipment is at (or was last scanned at) a hub off its expected route."""
-    expected = set(shipment.expected_route or [])
-    if shipment.current_hub_id and shipment.current_hub_id not in expected:
-        return "wrong_hub"
+    """Hub id if the parcel was last scanned at a hub off its expected route (excess)."""
     scans = shipment.actual_route or []
-    if scans and scans[-1] not in expected:
-        return "wrong_hub"
+    if scans and scans[-1] not in set(shipment.expected_route or []):
+        return scans[-1]
     return None
 
 
-def check_geofence(shipment, expected_hub, previous_hub=None) -> bool:
-    """True if the shipment is further than GEOFENCE_THRESHOLD_KM from its expected road."""
-    if shipment.current_lat is None or shipment.current_lng is None or expected_hub is None:
-        return False
-    point = (shipment.current_lat, shipment.current_lng)
-    path = roads.road_path(previous_hub.id, expected_hub.id) if previous_hub is not None else None
-    if path:  # distance from the actual road, which can run far from the straight line
-        distance = min(point_to_line_distance(point, p, q) for p, q in zip(path, path[1:]))
-    elif previous_hub is not None:
-        distance = point_to_line_distance(point, (previous_hub.lat, previous_hub.lng),
-                                          (expected_hub.lat, expected_hub.lng))
-    else:
-        distance = haversine(*point, expected_hub.lat, expected_hub.lng)
-    return distance > config.GEOFENCE_THRESHOLD_KM
+def check_manifest_mismatch(shipment, next_hub_id, vehicles: dict | None = None):
+    """The latest custody scan is a load onto a vehicle that no longer reaches the next hub.
+
+    With `vehicles` the loaded vehicle's current remaining route decides; without it (or
+    for an unknown vehicle) the loading scanner's own verdict (`expected`) is used.
+    Returns the load ScanEvent, or None.
+    """
+    last = last_custody_scan(shipment)
+    if last is None or last.event_type != "load" or last.vehicle_id is None:
+        return None
+    vehicle = (vehicles or {}).get(last.vehicle_id)
+    if vehicle is not None:
+        return None if vehicle_serves(vehicle, next_hub_id) else last
+    return None if last.expected else last
+
+
+def check_short(shipment):
+    """The 'short' raised since the parcel was last scanned, or None."""
+    scans = _scans(shipment)
+    return scans[-1] if scans and scans[-1].event_type == "short" else None
 
 
 def check_time_anomaly(shipment, expected_hub, previous_hub=None, now=None) -> bool:
@@ -91,13 +121,13 @@ def check_time_anomaly(shipment, expected_hub, previous_hub=None, now=None) -> b
 
 
 def check_scan_gap(shipment, now=None) -> bool:
-    """True if a shipment that is NOT aboard a tracked vehicle has had no scan for too long.
+    """True if a parcel that its scans place at a hub (not aboard) has had no scan for too long.
 
-    Shipments riding a vehicle are only scanned at hubs, and national legs can
+    Parcels riding a vehicle are only scanned at hubs, and national legs can
     exceed MAX_SCAN_GAP_HOURS; for them the time-anomaly check applies instead.
     """
     now = now or clock.now()
-    if shipment.last_scan_at is None or shipment.current_vehicle_id is not None:
+    if shipment.last_scan_at is None or on_vehicle_by_scans(shipment):
         return False
     return (now - shipment.last_scan_at).total_seconds() / 3600 > config.MAX_SCAN_GAP_HOURS
 
@@ -125,24 +155,36 @@ def calculate_severity(priority: str, hours_to_deadline: float, misplacement_typ
     return round(score * 100, 1)
 
 
-def detect_shipment(shipment, hubs: dict, now=None) -> AnomalyResult | None:
+def detect_shipment(shipment, hubs: dict, now=None,
+                    vehicles: dict | None = None) -> AnomalyResult | None:
+    """`vehicles` (id -> Vehicle) lets the manifest check use each vehicle's live remaining route."""
     now = now or clock.now()
-    prev_id, next_id = _expected_segment(shipment)
+    prev_id, next_id = expected_segment(shipment)
     prev_hub, next_hub = hubs.get(prev_id), hubs.get(next_id)
+    last_hub = (shipment.actual_route or ["unknown"])[-1]
     kind, reason = None, ""
-    if (kind := check_route_deviation(shipment)) is not None:
-        where = shipment.current_hub_id or (shipment.actual_route or ["?"])[-1]
-        reason = f"At {where}, which is not on expected route {shipment.expected_route}"
-    elif shipment.current_hub_id is None and check_geofence(shipment, next_hub, prev_hub):
+    if (hub_id := check_route_deviation(shipment)) is not None:
+        kind = "wrong_hub"
+        reason = (f"Excess at hub: scanned at {hub_id}, which is not on expected route "
+                  f"{shipment.expected_route}")
+    elif (load := check_manifest_mismatch(shipment, next_id, vehicles)) is not None:
         kind = "wrong_vehicle"
-        reason = (f"Position is more than {config.GEOFENCE_THRESHOLD_KM:.0f} km off the "
-                  f"expected path {prev_id} → {next_id}")
+        where = f" at {load.hub_id}" if load.hub_id else ""
+        reason = (f"Manifest mismatch at loading: scanned onto {load.vehicle_id}{where}, "
+                  f"which does not go to next hub {next_id} "
+                  f"(manifested on {shipment.manifest_vehicle_id or 'no vehicle'})")
+    elif (short := check_short(shipment)) is not None:
+        kind = "stuck"
+        reason = (f"Short at unload: not aboard {short.vehicle_id} when it reached "
+                  f"{short.hub_id}; last scanned at {last_hub}")
     elif check_time_anomaly(shipment, next_hub, prev_hub, now):
         kind = "stuck"
-        reason = f"Leg {prev_id} → {next_id} is taking over {config.TIME_TOLERANCE}× expected time"
+        reason = (f"Time anomaly: no scan on leg {prev_id} → {next_id} for over "
+                  f"{config.TIME_TOLERANCE}× its expected time")
     elif check_scan_gap(shipment, now):
         kind = "stuck"
-        reason = f"No scan for more than {config.MAX_SCAN_GAP_HOURS:.0f} h"
+        reason = (f"Scan gap: no scan for more than {config.MAX_SCAN_GAP_HOURS:.0f} h "
+                  f"(last scanned at {last_hub})")
     if kind is None:
         return None
     hours_left = (shipment.deadline - now).total_seconds() / 3600
@@ -150,8 +192,9 @@ def detect_shipment(shipment, hubs: dict, now=None) -> AnomalyResult | None:
     return AnomalyResult(shipment.id, kind, reason, score, severity_label(score), now)
 
 
-def detect_anomalies(shipments, hubs: dict, now=None) -> list[AnomalyResult]:
+def detect_anomalies(shipments, hubs: dict, now=None,
+                     vehicles: dict | None = None) -> list[AnomalyResult]:
     """Scan active shipments and return flagged anomalies, most severe first."""
     results = [r for s in shipments if s.status in ACTIVE_STATUSES
-               if (r := detect_shipment(s, hubs, now)) is not None]
+               if (r := detect_shipment(s, hubs, now, vehicles)) is not None]
     return sorted(results, key=lambda r: r.severity_score, reverse=True)

@@ -52,8 +52,10 @@ def test_scoring_helpers():
 
 # ---- Module 1 ------------------------------------------------------------------
 def test_seed_only_flags_scripted_shipment(world):
-    results = ad.detect_anomalies(world["shipments"].values(), world["hubs"], world["now"])
+    results = ad.detect_anomalies(world["shipments"].values(), world["hubs"], world["now"],
+                                  vehicles=world["vehicles"])
     assert [(r.shipment_id, r.misplacement_type) for r in results] == [("SHP-501", "wrong_hub")]
+    assert results[0].reason.startswith("Excess at hub: scanned at HUB-WGL-01")
 
 
 def test_scan_gap_flags_idle_shipment_at_hub(world):
@@ -65,11 +67,14 @@ def test_scan_gap_flags_idle_shipment_at_hub(world):
     assert result is not None and result.misplacement_type == "stuck"
 
 
-def test_geofence_flags_wrong_vehicle(world):
-    s = next(x for x in world["shipments"].values() if x.current_vehicle_id)
-    s.current_lat, s.current_lng = 8.5, 77.0  # far south, off any expected path
-    result = ad.detect_shipment(s, world["hubs"], world["now"])
+def test_manifest_mismatch_flags_wrong_vehicle(world):
+    from engines.fleet_progress import record_scan
+
+    s = world["shipments"]["SHP-311"]  # manifested on TRUCK-102, next hub HUB-VJA-01
+    record_scan(s, "load", world["now"], "HUB-MUM-01", "VEH-VAN-0011")  # Mumbai–Pune shuttle
+    result = ad.detect_shipment(s, world["hubs"], world["now"], world["vehicles"])
     assert result is not None and result.misplacement_type == "wrong_vehicle"
+    assert result.reason.startswith("Manifest mismatch at loading: scanned onto VEH-VAN-0011")
 
 
 def test_severity_bands():
