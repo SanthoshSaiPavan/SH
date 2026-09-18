@@ -14,7 +14,7 @@ the explanation agent.
 
 ## Setup
 
-Commands are for Windows PowerShell (Python 3, Node.js and Docker Desktop installed).
+Commands are for Windows PowerShell (Python 3.10+, Node.js and Docker Desktop installed).
 
 ```powershell
 # 1. PostgreSQL + Redis (Docker Desktop must be running)
@@ -51,19 +51,31 @@ JWT per account and enforces roles.
 | `driver101` … `driver104` | `driver123` | DRIVER (TRUCK-101 … 104) |
 
 ## Demo script (Module 7 scenario)
-1. Pick **Operator** from the user menu (top right). SHP-501 (🟠 High, 120 kg) is flagged `wrong_hub` at Warangal
-   (it should have gone Hyderabad → Vijayawada directly).
+1. Pick **Operator** from the user menu (top right). SHP-501 (🟠 High, 120 kg) is flagged `wrong_hub`:
+   it was scanned as *excess* at Warangal, which is not on its Hyderabad → Vijayawada route.
+   Detection uses scans and manifests only; a parcel has no GPS.
 2. Click **DEMO SIMULATION**. Trucks go live, and the banner shows **PIGGYBACK OPPORTUNITY
-   DETECTED: SHP-501 → TRUCK-102** with pickup/delivery ETA, free capacity, cost and saving.
-3. Open **Simulation** and set TRUCK-102's next stop to Visakhapatnam (or slow it down).
-   Within ~5 s the recommendation switches to TRUCK-104 and gives the reason.
-4. Open the banner, review the scoring breakdown, press **Explain recommendation**, then
-   **Approve**. The assignment locks and SHP-501 is tracked to Vijayawada.
-5. Use **Trigger misplacement** for more cases (wrong hub / wrong vehicle / stuck);
-   🔴 critical shipments scoring > 85 are auto-executed.
+   DETECTED: SHP-501 → TRUCK-104** with P(on-time), pickup/delivery ETA, free capacity, cost and saving.
+3. Open the banner. **Rejected by the no-harm rule**: TRUCK-102 (Nagpur → Vijayawada, the road
+   runs through Warangal) would arrive sooner, but stopping at Warangal makes SHP-311 (🔴 critical,
+   aboard TRUCK-102) late. The Pareto strip shows the trade-offs ("+₹X buys Y h") and the
+   sensitivity line shows the pick holds with each weight moved ±20%.
+4. Open **Simulation** and reroute TRUCK-104 (or slow it down). Within ~5 s the recommendation
+   switches and gives the reason.
+5. Press **Explain recommendation**, then **Approve**. The assignment locks and SHP-501 is
+   tracked to Vijayawada. Approving the same shipment twice is refused.
+6. Use **Trigger misplacement** for more cases: wrong hub (excess scan), wrong vehicle
+   (manifest mismatch at the loading scan), stuck (short when its truck unloads without it).
+   🔴 critical shipments scoring > 85 with P(on-time) ≥ 95% are auto-executed.
 
 LIVE GPS: switch the toggle to **LIVE GPS**, open the app on a phone and pick a
 **Driver** from the user menu. Browsers only allow geolocation on HTTPS or localhost.
+
+## Benchmark
+`cd backend; .venv\Scripts\python -m scripts.benchmark` replays 500 seeded scenarios
+(3 simultaneous misplacements each) against carrier default (hold for the next direct vehicle,
+else dedicated), always-dedicated and greedy nearest-truck. The clock and seed are fixed, so the
+output is reproducible; `--n`, `--seed`, `--batch`, `--json` change it.
 
 ## Tests
 ```powershell
@@ -77,10 +89,10 @@ npx oxlint src
 ## Where the logic lives
 | Module | File |
 |---|---|
-| 1 Anomaly detection | `backend/engines/anomaly_detector.py` |
+| 1 Anomaly detection (scan-based) | `backend/engines/anomaly_detector.py`; scans are written in `fleet_progress.py` |
 | 2 Piggyback matching | `backend/engines/piggyback_matcher.py` |
-| 3 Recovery strategies + autonomy | `backend/engines/recovery_engine.py` |
-| 4 Time-expanded graph | `backend/engines/graph_network.py` |
+| 3 Recovery strategies + autonomy | `backend/engines/recovery_engine.py`, P(on-time) in `on_time.py`, joint assignment in `assignment.py` |
+| 4 Time-expanded graph + no-harm rule | `backend/engines/graph_network.py`, `backend/engines/detours.py` |
 | 5 Simulation / engine tick | `backend/engines/simulation.py`, `backend/engines/fleet_progress.py` |
 | 6 LLM decision agent | `backend/engines/decision_agent.py` |
 | 7 Real-time layer | `backend/realtime/*` |

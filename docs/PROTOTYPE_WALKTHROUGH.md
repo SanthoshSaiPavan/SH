@@ -66,13 +66,15 @@ but ended up at **Warangal** (wrong hub). TRUCK-101 to TRUCK-104 are the trucks 
 The original plan split the brain into 7 modules. Here is each one in simple words.
 
 ### Module 1: Spot the problem (`engines/anomaly_detector.py`)
-Every 2 seconds it checks every shipment. Checks run in this order, and the first one
-that fails decides the problem type:
+Every 2 seconds it checks every shipment. A parcel has no GPS, so the checks only use
+**scans** (what hub and truck crews record) and the **manifest** (which truck the parcel is
+booked on). Checks run in this order, and the first one that fails decides the problem type:
 
 | Check | What it looks for | Label |
 |---|---|---|
-| Route check | Parcel is at a hub that is not on its planned route | `wrong_hub` |
-| Distance check | Parcel is more than 50 km from where it should be | `wrong_vehicle` |
+| Excess scan | Parcel was scanned at a hub that is not on its planned route | `wrong_hub` |
+| Manifest mismatch | Parcel was scanned onto a truck that doesn't go to its next hub | `wrong_vehicle` |
+| Short scan | Its booked truck unloaded at the next hub and the parcel wasn't there | `stuck` |
 | Time check | Parcel is taking 1.5× longer than expected | `stuck` |
 | Scan check | No scan for over 6 hours | `stuck` |
 
@@ -201,9 +203,12 @@ Tests: `cd backend && .venv/bin/pytest -q` (no database needed). Frontend check:
 
 1. Choose **Operator** from the user menu. SHP-501 is flagged `wrong_hub` at Warangal.
 2. Click **DEMO SIMULATION**. Trucks start moving. A banner appears:
-   **PIGGYBACK OPPORTUNITY DETECTED: SHP-501 → TRUCK-102**, with pickup time, free space, cost, and savings.
-3. Go to **Simulation** and change TRUCK-102's next stop (or slow it down). In about 5 seconds the
-   recommendation **switches to TRUCK-104** and tells you why.
+   **PIGGYBACK OPPORTUNITY DETECTED: SHP-501 → TRUCK-104**, with the chance of arriving on time,
+   pickup time, free space, cost, and savings.
+3. Open the banner. TRUCK-102 is listed as **rejected by the no-harm rule**: it would be faster, but
+   stopping at Warangal would make SHP-311 (🔴 critical, already on TRUCK-102) late.
+   Go to **Simulation** and change TRUCK-104's next stop (or slow it down). In about 5 seconds the
+   recommendation **switches** and tells you why.
 4. Open the banner, read the scores, click **Explain recommendation**, then **Approve**.
    The assignment locks and SHP-501 is tracked to Vijayawada.
 5. Press **Trigger misplacement** to create more problems. 🔴 critical ones scoring over 85 rescue themselves.
