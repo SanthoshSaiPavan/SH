@@ -87,3 +87,14 @@ npx oxlint src
 
 Every tunable threshold is in `backend/config.py`. Values marked `ASSUMPTION` are not
 specified by the implementation plan and were chosen as demo defaults.
+
+## Road routes
+Vehicles drive, and the map draws routes, along real roads. Road paths and distances for
+every pair of hubs were fetched once from [OSRM](https://project-osrm.org/) (road data
+© OpenStreetMap contributors, ODbL) and are cached in `backend/data/road_routes.json`, so
+the demo needs no routing service at runtime. After adding hubs, fetch the new pairs with:
+
+```powershell
+cd backend
+.venv\Scripts\python -m scripts.fetch_road_routes    # set OSRM_URL to use your own OSRM server
+```

@@ -14,7 +14,7 @@ import bcrypt
 import config
 from database.db import Base, SessionLocal, engine
 from database.models import Hub, Route, Shipment, User, Vehicle
-from utils import clock
+from utils import clock, roads
 from utils.geo import haversine, interpolate
 
 HUBS = [
@@ -96,21 +96,24 @@ def _hash(password: str) -> str:
 
 
 def _position_between(hubs, route, stop_index, progress):
-    """Point `progress` of the way from route[stop_index-1] to route[stop_index]."""
+    """Point `progress` of the way along the road from route[stop_index-1] to route[stop_index]."""
     a, b = hubs[route[max(stop_index - 1, 0)]], hubs[route[stop_index]]
+    path = roads.road_path(a.id, b.id)
+    if path:
+        return roads.point_along_path(path, progress)
     return interpolate(a.lat, a.lng, b.lat, b.lng, progress)
 
 
 def _leg_hours(a: Hub, b: Hub, speed: float) -> float:
-    return haversine(a.lat, a.lng, b.lat, b.lng) * config.ROAD_DISTANCE_FACTOR / speed
+    return roads.hub_km(a, b) / speed
 
 
 def _hours_since_departure(hubs, v) -> float:
     """Time since the vehicle left its previous hub, consistent with its seeded position."""
     route, idx = v.planned_route, v.current_stop_index
-    prev = hubs[route[max(idx - 1, 0)]]
-    km = haversine(prev.lat, prev.lng, v.current_lat, v.current_lng) * config.ROAD_DISTANCE_FACTOR
-    return km / v.speed_kmh
+    prev, nxt = hubs[route[max(idx - 1, 0)]], hubs[route[idx]]
+    driven = roads.hub_km(prev, nxt) - roads.km_to_hub(prev.id, nxt, v.current_lat, v.current_lng)
+    return max(driven, 0.0) / v.speed_kmh
 
 
 def build_seed():

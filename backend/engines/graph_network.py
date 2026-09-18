@@ -25,17 +25,30 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 import networkx as nx
 
 import config
+from utils import roads
 from utils.geo import haversine, point_to_line_distance
 
 HAZMAT_PREFIX = "hazmat_"
 
 
 def road_km(a, b) -> float:
-    return haversine(a.lat, a.lng, b.lat, b.lng) * config.ROAD_DISTANCE_FACTOR
+    """Road km between two hubs (cached OSRM distance, else great-circle × factor)."""
+    return roads.hub_km(a, b)
+
+
+@lru_cache(maxsize=4096)
+def _distance_to_leg_km(a_id, b_id, hub_id, hub_pt, a_pt, b_pt) -> float:
+    """km from a hub to the road between hubs a and b (straight segment if not cached).
+
+    Cached because it runs for every leg × hub on every graph rebuild; hubs don't move.
+    """
+    path = roads.road_path(a_id, b_id) or [a_pt, b_pt]
+    return min(point_to_line_distance(hub_pt, p, q) for p, q in zip(path, path[1:]))
 
 
 def _hours(km: float, speed: float) -> timedelta:
@@ -54,8 +67,8 @@ def vehicle_schedule(vehicle, hubs: dict, now: datetime, position=None) -> list[
     if vehicle.status == "at_hub":
         arrive = now
     else:
-        arrive = now + _hours(haversine(lat, lng, first.lat, first.lng)
-                              * config.ROAD_DISTANCE_FACTOR, vehicle.speed_kmh)
+        prev_id = route[idx - 1] if idx > 0 else None
+        arrive = now + _hours(roads.km_to_hub(prev_id, first, lat, lng), vehicle.speed_kmh)
     stops = []
     for i in range(idx, len(route)):
         if i > idx:
@@ -131,8 +144,8 @@ class _Builder:
             for hub in self.hubs.values():
                 if hub.id in route_hubs:
                     continue
-                if point_to_line_distance((hub.lat, hub.lng), (a.lat, a.lng),
-                                          (b.lat, b.lng)) > config.MAX_DETOUR_KM:
+                if _distance_to_leg_km(a.id, b.id, hub.id, (hub.lat, hub.lng),
+                                       (a.lat, a.lng), (b.lat, b.lng)) > config.MAX_DETOUR_KM:
                     continue
                 to_h, h_to_b, direct = road_km(a, hub), road_km(hub, b), road_km(a, b)
                 detour_km = max(0.0, to_h + h_to_b - direct)

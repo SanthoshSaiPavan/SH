@@ -186,3 +186,34 @@ def test_generated_shipment_rides_vehicle_from_its_hub(world):
     assert s.deadline > world["now"]
     # A freshly loaded shipment on its planned vehicle is not an anomaly.
     assert ad.detect_shipment(s, world["hubs"], world["now"]) is None
+
+
+# ---- OSRM road geometry ----------------------------------------------------------------
+def test_road_cache_directions_and_distance(world):
+    from utils import roads
+
+    fwd, back = roads.road_path("HUB-HYD-01", "HUB-WGL-01"), roads.road_path("HUB-WGL-01", "HUB-HYD-01")
+    assert fwd and back == fwd[::-1]
+    hyd, wgl = world["hubs"]["HUB-HYD-01"], world["hubs"]["HUB-WGL-01"]
+    assert haversine(*fwd[0], hyd.lat, hyd.lng) < 2 and haversine(*fwd[-1], wgl.lat, wgl.lng) < 2
+    assert roads.hub_km(hyd, wgl) == roads.road_distance_km("HUB-WGL-01", "HUB-HYD-01")
+    assert gn.road_km(hyd, wgl) == roads.hub_km(hyd, wgl)  # the graph uses road km
+    mid = roads.point_along_path(fwd, 0.5)
+    assert abs(roads.km_to_hub("HUB-HYD-01", wgl, *mid) - roads.hub_km(hyd, wgl) / 2) < 10
+
+
+def test_simulator_follows_the_road(world):
+    from realtime.gps_simulator import GpsSimulator
+    from utils import roads
+
+    v = world["vehicles"]["TRUCK-102"]  # HYD → WGL leg
+    path = roads.road_path("HUB-HYD-01", "HUB-WGL-01")
+    sim = GpsSimulator()
+    for _ in range(20):
+        pos = sim.next_position(v, world["hubs"], 10, world["now"])
+        v.current_lat, v.current_lng = pos["lat"], pos["lng"]
+        off_road = min(point_to_line_distance((v.current_lat, v.current_lng), p, q)
+                       for p, q in zip(path, path[1:]))
+        assert off_road < 0.5
+    wgl = world["hubs"]["HUB-WGL-01"]
+    assert haversine(v.current_lat, v.current_lng, wgl.lat, wgl.lng) < 2  # reached Warangal

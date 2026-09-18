@@ -3,6 +3,7 @@ import type { Feature, FeatureCollection, LineString } from 'geojson'
 import type { GeoJSONSource, Map as MLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef, useState } from 'react'
+import { ensureRoadPaths, hubLine, hubPairs } from '../lib/roads'
 import { CONNECTION_COLORS, MAP_CONFIG, MARKER_ANIMATION_MS, PRIORITY_META } from '../lib/constants'
 import type { Hub, Shipment, Vehicle } from '../lib/schemas'
 
@@ -31,7 +32,7 @@ function lineFeatures(routes: RouteOverlay[], hubs: Record<string, Hub>): Featur
       properties: { color: r.color, dashed: r.dashed ? 1 : 0 },
       geometry: {
         type: 'LineString',
-        coordinates: r.hubs.filter((h) => hubs[h]).map((h) => [hubs[h].lng, hubs[h].lat]),
+        coordinates: hubLine(r.hubs, hubs),
       },
     })).filter((f) => f.geometry.coordinates.length > 1),
   }
@@ -51,6 +52,7 @@ export default function LiveMap({ hubs, vehicles, shipments, routes = [], showPl
   const container = useRef<HTMLDivElement>(null)
   const map = useRef<MLMap | null>(null)
   const [ready, setReady] = useState(false)
+  const [roadsVersion, setRoadsVersion] = useState(0)
   const vehicleMarkers = useRef(new Map<string, Animated>())
   const shipmentMarkers = useRef(new Map<string, maplibregl.Marker>())
   const hubMarkers = useRef(new Map<string, maplibregl.Marker>())
@@ -173,7 +175,8 @@ export default function LiveMap({ hubs, vehicles, shipments, routes = [], showPl
     })
   }, [shipments, vehicles])
 
-  // Route lines: planned (remaining stops of every vehicle) + overlays (recovery paths)
+  // Route lines: planned (remaining stops of every vehicle) + overlays (recovery paths),
+  // drawn along cached road geometry; missing roads are fetched once, then redrawn.
   useEffect(() => {
     const m = map.current
     if (!m) return
@@ -186,7 +189,9 @@ export default function LiveMap({ hubs, vehicles, shipments, routes = [], showPl
         : []
     ;(m.getSource('planned') as GeoJSONSource | undefined)?.setData(lineFeatures(planned, hubs))
     ;(m.getSource('overlay') as GeoJSONSource | undefined)?.setData(lineFeatures(routes, hubs))
-  }, [ready, vehicles, hubs, routes, showPlannedRoutes])
+    const pairs = [...planned, ...routes].flatMap((r) => hubPairs(r.hubs))
+    ensureRoadPaths(pairs).then((added) => { if (added) setRoadsVersion((n) => n + 1) }).catch(() => undefined)
+  }, [ready, vehicles, hubs, routes, showPlannedRoutes, roadsVersion])
 
   useEffect(() => {
     if (focus && map.current) map.current.flyTo({ center: [focus.lng, focus.lat], zoom: focus.zoom ?? 7 })

@@ -58,6 +58,11 @@ that already departed are unreachable by construction. Detours are shifted copie
 per distinct first vehicle (`find_candidate_paths`). Vehicle schedules are *derived* from position, speed and
 `ROAD_DISTANCE_FACTOR × haversine`; nothing is stored.
 
+**Road geometry.** `backend/data/road_routes.json` holds OSRM road paths + distances for every hub pair (committed; refresh with
+`.venv/bin/python -m scripts.fetch_road_routes`, which only fetches missing pairs). `utils/roads.py` serves it: graph leg km,
+ETAs, the geofence, simulator movement and seed positions all use road geometry, falling back to great-circle ×
+`ROAD_DISTANCE_FACTOR` for uncached pairs. The map fetches paths on demand via `GET /api/road-routes?pairs=A|B,…`.
+
 **Shipment lifecycle.** in_transit → (detected) misplaced → (executed) piggybacked | in_transit with `recovery_strategy` set
 → recovered. Detection skips shipments with `recovery_strategy` set. Scan-gap detection only applies to shipments not aboard a vehicle.
 
