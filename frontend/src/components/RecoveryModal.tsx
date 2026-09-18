@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { z } from 'zod'
 import { api, ApiError } from '../lib/api'
 import { PRIORITY_META, STRATEGY_META } from '../lib/constants'
-import { hours, inr, parseUtc, pct, time, title } from '../lib/format'
+import { hours, inr, parseUtc, pct, time, timeLeft, title } from '../lib/format'
 import { EvaluationSchema, type Evaluation, type Shipment, type Strategy } from '../lib/schemas'
 import { useAuth } from '../hooks/useAuth'
 import { useEngineNow } from '../hooks/useEngineNow'
@@ -112,9 +112,9 @@ export default function RecoveryModal({ shipment, onClose, onViewRoute }: Props)
             <h2 className="text-xl font-bold mono">{shipment.id}</h2>
             <div className="text-sm text-muted mt-1 flex flex-wrap gap-x-4">
               <span>{p.emoji} Priority: <b style={{ color: p.color }}>{p.label.toUpperCase()}</b></span>
-              <span>Deadline: <b className={left < 2 ? 'text-danger' : 'text-ink'}>{hours(left)}</b> remaining</span>
+              <span>Deadline: <b className={left < 2 ? 'text-danger' : 'text-ink'}>{timeLeft(left)}</b></span>
               <span>{shipment.weight_kg} kg · {shipment.volume_cbm} m³</span>
-              {shipment.misplacement_type && <span className="text-warning">{title(shipment.misplacement_type)} at {shipment.current_hub_id ?? 'en route'}</span>}
+              {shipment.misplacement_type && <span className="text-warning">{title(shipment.misplacement_type)} {shipment.current_hub_id ? `at ${shipment.current_hub_id}` : `en route${shipment.current_vehicle_id ? ` on ${shipment.current_vehicle_id}` : ''}`}</span>}
               <span>→ {shipment.destination_hub_id}</span>
             </div>
           </div>

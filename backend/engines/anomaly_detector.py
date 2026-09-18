@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime
 
 import config
-from utils import clock
+from utils import clock, roads
 from utils.geo import haversine, point_to_line_distance
 from utils.scoring import clamp01
 
@@ -62,11 +62,14 @@ def check_route_deviation(shipment) -> str | None:
 
 
 def check_geofence(shipment, expected_hub, previous_hub=None) -> bool:
-    """True if the shipment is further than GEOFENCE_THRESHOLD_KM from its expected path."""
+    """True if the shipment is further than GEOFENCE_THRESHOLD_KM from its expected road."""
     if shipment.current_lat is None or shipment.current_lng is None or expected_hub is None:
         return False
     point = (shipment.current_lat, shipment.current_lng)
-    if previous_hub is not None:
+    path = roads.road_path(previous_hub.id, expected_hub.id) if previous_hub is not None else None
+    if path:  # distance from the actual road, which can run far from the straight line
+        distance = min(point_to_line_distance(point, p, q) for p, q in zip(path, path[1:]))
+    elif previous_hub is not None:
         distance = point_to_line_distance(point, (previous_hub.lat, previous_hub.lng),
                                           (expected_hub.lat, expected_hub.lng))
     else:
@@ -81,8 +84,7 @@ def check_time_anomaly(shipment, expected_hub, previous_hub=None, now=None) -> b
         return False
     if previous_hub.id == expected_hub.id:
         return False
-    km = haversine(previous_hub.lat, previous_hub.lng, expected_hub.lat, expected_hub.lng) \
-        * config.ROAD_DISTANCE_FACTOR
+    km = roads.hub_km(previous_hub, expected_hub)
     expected_hours = km / config.AVG_TRANSIT_SPEED_KMH
     actual_hours = (now - shipment.last_scan_at).total_seconds() / 3600
     return actual_hours > expected_hours * config.TIME_TOLERANCE

@@ -1,5 +1,5 @@
 import { PRIORITY_META, STATUS_COLORS } from '../lib/constants'
-import { hours, parseUtc, title } from '../lib/format'
+import { parseUtc, timeLeft, title } from '../lib/format'
 import type { Recommendation, Shipment } from '../lib/schemas'
 import type { Progress } from '../hooks/useLiveData'
 
@@ -20,7 +20,7 @@ export default function ShipmentCard({ shipment: s, recommendation, progress, no
       <div className="text-xs text-muted mt-1.5 flex flex-wrap gap-x-3">
         <span>{s.origin_hub_id.replace('HUB-', '')} → {s.destination_hub_id.replace('HUB-', '')}</span>
         <span>{s.weight_kg} kg</span>
-        <span className={left < 2 ? 'text-danger' : ''}>⏳ {hours(left)}</span>
+        <span className={left < 2 ? 'text-danger' : ''}>⏳ {timeLeft(left)}</span>
         {s.misplacement_type && <span className="text-warning">{title(s.misplacement_type)}</span>}
       </div>
       {recommendation && (

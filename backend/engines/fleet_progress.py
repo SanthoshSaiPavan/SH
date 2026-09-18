@@ -12,7 +12,8 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from database.models import Hub, RecoveryAction, Shipment, Vehicle
-from utils.geo import haversine, interpolate
+from utils import roads
+from utils.geo import haversine
 
 ARRIVAL_RADIUS_KM = 2.0  # ASSUMPTION: within this distance of the next stop = arrived
 VEHICLE_RECOVERIES = ("piggyback", "hold")
@@ -174,16 +175,10 @@ def progress_virtual_recoveries(db: Session, now: datetime) -> list:
         if fraction >= 1.0:
             events.append(complete_recovery(db, shipment, action, now))
             continue
-        path = [hubs[h] for h in plan.get("hubs", []) if h in hubs]
-        if len(path) >= 2:
-            seg_km = [haversine(a.lat, a.lng, b.lat, b.lng) for a, b in zip(path, path[1:])]
-            target, i = fraction * sum(seg_km), 0
-            while i < len(seg_km) - 1 and target > seg_km[i]:
-                target -= seg_km[i]
-                i += 1
-            shipment.current_lat, shipment.current_lng = interpolate(
-                path[i].lat, path[i].lng, path[i + 1].lat, path[i + 1].lng,
-                target / max(seg_km[i], 1e-9))
+        hub_ids = [h for h in plan.get("hubs", []) if h in hubs]
+        if len(hub_ids) >= 2:
+            line = roads.hub_polyline(hubs, hub_ids)
+            shipment.current_lat, shipment.current_lng = roads.point_along_path(line, fraction)
             shipment.current_hub_id = None
         events.append(("recovery:progress",
                        {"shipment_id": shipment.id, "percent_complete": round(fraction * 100, 1),

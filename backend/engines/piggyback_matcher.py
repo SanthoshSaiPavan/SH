@@ -102,11 +102,10 @@ def dedicated_cost(shipment, hubs: dict) -> tuple[float, float]:
     """(₹ cost, road km) of a dedicated vehicle straight to the destination."""
     dest = hubs[shipment.destination_hub_id]
     if shipment.current_hub_id in hubs:
-        origin = hubs[shipment.current_hub_id]
-        lat, lng = origin.lat, origin.lng
+        km = gn.road_km(hubs[shipment.current_hub_id], dest)
     else:
-        lat, lng = shipment.current_lat, shipment.current_lng
-    km = gn.haversine(lat, lng, dest.lat, dest.lng) * config.ROAD_DISTANCE_FACTOR
+        km = gn.haversine(shipment.current_lat, shipment.current_lng, dest.lat, dest.lng) \
+            * config.ROAD_DISTANCE_FACTOR
     return km * config.DEDICATED_COST_PER_KM, km
 
 

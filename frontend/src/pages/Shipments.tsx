@@ -3,7 +3,7 @@ import RecoveryModal from '../components/RecoveryModal'
 import { useEngineNow } from '../hooks/useEngineNow'
 import { useLiveData, useShipments } from '../hooks/useLiveData'
 import { PRIORITY_META, STATUS_COLORS } from '../lib/constants'
-import { hours, parseUtc, title } from '../lib/format'
+import { parseUtc, timeLeft, title } from '../lib/format'
 
 const STATUSES = ['in_transit', 'misplaced', 'piggybacked', 'recovered', 'delivered', 'delayed', 'at_origin']
 
@@ -47,7 +47,7 @@ export default function Shipments() {
                   <td className="px-3 text-xs">{s.expected_route.map((h) => h.replace('HUB-', '')).join(' › ')}</td>
                   <td className="px-3 text-xs mono">{s.current_hub_id ?? s.current_vehicle_id ?? '—'}</td>
                   <td className="px-3 text-xs">{s.weight_kg} kg</td>
-                  <td className={`px-3 text-xs ${left < 0 ? 'text-danger' : ''}`}>{['delivered', 'recovered'].includes(s.status) ? '—' : hours(left)}</td>
+                  <td className={`px-3 text-xs ${left < 0 ? 'text-danger' : ''}`}>{['delivered', 'recovered'].includes(s.status) ? '—' : timeLeft(left)}</td>
                   <td className="px-3 text-xs">{s.handling_flags.join(', ') || '—'}</td>
                   <td className="px-3 text-xs">{s.recovery_strategy ? `${title(s.recovery_strategy)} ${s.recovery_score?.toFixed(0) ?? ''}` : '—'}</td>
                 </tr>

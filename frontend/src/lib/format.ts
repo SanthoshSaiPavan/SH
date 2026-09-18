@@ -14,9 +14,12 @@ export const hours = (h: number | null | undefined) => {
   if (h === null || h === undefined) return '—'
   const sign = h < 0 ? '-' : ''
   const abs = Math.abs(h)
-  const hh = Math.floor(abs)
-  const mm = Math.round((abs - hh) * 60)
-  return `${sign}${hh}h ${mm.toString().padStart(2, '0')}m`
+  if (abs >= 48) return `${sign}${Math.floor(abs / 24)}d ${Math.floor(abs % 24)}h`
+  const totalMin = Math.round(abs * 60)
+  return `${sign}${Math.floor(totalMin / 60)}h ${(totalMin % 60).toString().padStart(2, '0')}m`
 }
+
+/** Deadline countdown: "6h 30m left" or "overdue by 3d 4h". */
+export const timeLeft = (h: number) => (h < 0 ? `overdue by ${hours(-h)}` : `${hours(h)} left`)
 
 export const title = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())

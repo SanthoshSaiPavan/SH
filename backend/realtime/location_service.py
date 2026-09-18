@@ -20,7 +20,7 @@ from database.models import Hub, Vehicle, VehicleLocation
 from engines import fleet_progress
 from realtime import auth
 from realtime.socket_server import emit_fleet, emit_to_rooms
-from utils import clock
+from utils import clock, roads
 from utils.geo import haversine
 
 log = logging.getLogger(__name__)
@@ -107,9 +107,10 @@ class LocationService:
         return True, None
 
     def _plan_arrival(self, db, vehicle, ts):
-        hub = db.get(Hub, vehicle.planned_route[vehicle.current_stop_index])
-        km = haversine(vehicle.current_lat, vehicle.current_lng, hub.lat, hub.lng) \
-            * config.ROAD_DISTANCE_FACTOR
+        idx = vehicle.current_stop_index
+        hub = db.get(Hub, vehicle.planned_route[idx])
+        prev_id = vehicle.planned_route[idx - 1] if idx > 0 else None
+        km = roads.km_to_hub(prev_id, hub, vehicle.current_lat, vehicle.current_lng)
         self.planned_arrival[vehicle.id] = ts + timedelta(hours=km / max(vehicle.speed_kmh, 1))
 
     @staticmethod
@@ -219,9 +220,10 @@ class LocationService:
         route = vehicle.planned_route or []
         if vehicle.current_stop_index >= len(route):
             return False
+        idx = vehicle.current_stop_index
         with SessionLocal() as db:
-            hub = db.get(Hub, route[vehicle.current_stop_index])
-        km = haversine(state["lat"], state["lng"], hub.lat, hub.lng) * config.ROAD_DISTANCE_FACTOR
+            hub = db.get(Hub, route[idx])
+        km = roads.km_to_hub(route[idx - 1] if idx > 0 else None, hub, state["lat"], state["lng"])
         speed = max(state.get("speed") or 0.0, 5.0)
         eta = clock.now() + timedelta(hours=km / speed)
         return eta > planned + DELAY_TOLERANCE
