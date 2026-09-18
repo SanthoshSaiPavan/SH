@@ -1,0 +1,53 @@
+import type { Priority, StrategyType } from './schemas'
+
+export const PRIORITY_META: Record<Priority, { label: string; color: string; emoji: string }> = {
+  critical: { label: 'Critical', color: '#ef4444', emoji: '🔴' },
+  high: { label: 'High', color: '#f97316', emoji: '🟠' },
+  medium: { label: 'Medium', color: '#eab308', emoji: '🟡' },
+  low: { label: 'Low', color: '#22c55e', emoji: '🟢' },
+}
+
+export const STATUS_COLORS: Record<string, string> = {
+  at_origin: '#8892b0', in_transit: '#3b82f6', misplaced: '#ef4444', piggybacked: '#a855f7',
+  recovered: '#10b981', delivered: '#10b981', delayed: '#f59e0b',
+}
+
+export const STRATEGY_META: Record<StrategyType, { label: string; color: string; icon: string }> = {
+  piggyback: { label: 'Piggyback', color: '#a855f7', icon: '🚚' },
+  reroute: { label: 'Reroute', color: '#3b82f6', icon: '🔀' },
+  dedicated: { label: 'Dedicated vehicle', color: '#f59e0b', icon: '🚛' },
+  hold: { label: 'Hold at hub', color: '#8892b0', icon: '⏸' },
+}
+
+export const CONNECTION_COLORS: Record<string, string> = {
+  live: '#10b981', delayed: '#f59e0b', offline: '#ef4444',
+}
+
+export const MAP_CONFIG = {
+  center: [79.5, 21.5] as [number, number],
+  zoom: 4.3,
+  style: {
+    version: 8 as const,
+    sources: {
+      osm: {
+        type: 'raster' as const,
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '© OpenStreetMap contributors',
+      },
+    },
+    layers: [{
+      id: 'osm', type: 'raster' as const, source: 'osm',
+      paint: { 'raster-brightness-max': 0.45, 'raster-saturation': -0.6, 'raster-contrast': 0.1 },
+    }],
+  },
+}
+
+/** Socket location updates arrive every tick; markers animate over this window. */
+export const MARKER_ANIMATION_MS = 2000
+
+/** Chart series colours per strategy: validated categorical palette (dark surface,
+ *  CVD ΔE ≥ 8, fixed order) — distinct from the UI accent colours above. */
+export const STRATEGY_CHART_COLORS: Record<StrategyType, string> = {
+  piggyback: '#3987e5', reroute: '#d95926', dedicated: '#199e70', hold: '#c98500',
+}

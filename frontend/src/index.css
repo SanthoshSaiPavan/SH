@@ -1,0 +1,104 @@
+@import "tailwindcss";
+
+/* PiggyShip design system — dark control-tower theme (from the implementation plan). */
+:root {
+  --bg-primary: #0a0e1a;
+  --bg-secondary: #111827;
+  --bg-surface: #1e2538;
+  --bg-glass: rgba(30, 37, 56, 0.7);
+  --text-primary: #f0f4ff;
+  --text-secondary: #8892b0;
+  --text-accent: #64ffda;
+  --accent-primary: #6366f1;
+  --accent-success: #10b981;
+  --accent-warning: #f59e0b;
+  --accent-danger: #ef4444;
+  --accent-info: #3b82f6;
+  --accent-piggyback: #a855f7;
+  --border-subtle: rgba(99, 102, 241, 0.2);
+  --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.15);
+  --font-primary: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@theme {
+  --color-bg: #0a0e1a;
+  --color-card: #111827;
+  --color-surface: #1e2538;
+  --color-ink: #f0f4ff;
+  --color-muted: #8892b0;
+  --color-accent: #64ffda;
+  --color-primary: #6366f1;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-info: #3b82f6;
+  --color-piggy: #a855f7;
+  --font-sans: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+.glass {
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-glow);
+}
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  transition: var(--transition);
+}
+.btn {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .45rem .9rem; border-radius: var(--radius-sm);
+  font-weight: 600; font-size: .85rem; transition: var(--transition);
+  border: 1px solid var(--border-subtle); background: var(--bg-surface); color: var(--text-primary);
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent-primary); box-shadow: var(--shadow-glow); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn-primary { background: var(--accent-primary); border-color: var(--accent-primary); }
+.btn-success { background: var(--accent-success); border-color: var(--accent-success); color: #04130d; }
+.btn-danger { background: transparent; border-color: var(--accent-danger); color: var(--accent-danger); }
+.input {
+  background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-primary);
+  border-radius: var(--radius-sm); padding: .45rem .65rem; font-size: .85rem; outline: none;
+}
+.input:focus { border-color: var(--accent-primary); }
+.mono { font-family: var(--font-mono); }
+
+@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(239,68,68,.6); } 100% { box-shadow: 0 0 0 14px rgba(239,68,68,0); } }
+@keyframes slide-in { from { transform: translateX(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+.animate-slide-in { animation: slide-in .35s ease-out; }
+
+/* Map markers */
+.vehicle-marker { font-size: 22px; line-height: 1; filter: drop-shadow(0 0 4px rgba(0,0,0,.8)); cursor: pointer; }
+.vehicle-marker .dot { position: absolute; right: -4px; top: -4px; width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--bg-primary); }
+.shipment-marker {
+  font-size: 18px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%;
+  border: 2px solid; background: rgba(10,14,26,.85); cursor: pointer; animation: pulse-ring 1.6s infinite;
+}
+.maplibregl-popup-content { background: var(--bg-secondary) !important; color: var(--text-primary); border: 1px solid var(--border-subtle); border-radius: 10px !important; font-size: 12px; }
+.maplibregl-popup-tip { border-top-color: var(--bg-secondary) !important; border-bottom-color: var(--bg-secondary) !important; }
+.maplibregl-ctrl-attrib { background: rgba(10,14,26,.7) !important; color: var(--text-secondary); }
+.maplibregl-ctrl-attrib a { color: var(--text-secondary) !important; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--bg-surface); border-radius: 8px; }
