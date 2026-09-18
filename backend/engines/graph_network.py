@@ -87,14 +87,16 @@ def vehicle_schedule(vehicle, hubs: dict, now: datetime, position=None) -> list[
 
 
 class _Builder:
-    def __init__(self, hubs, routes, now, cargo_hazmat, cargo_aboard):
+    def __init__(self, hubs, routes, now, cargo_hazmat, cargo_aboard, enforce_no_harm=True):
         self.g = nx.DiGraph(now=now)
         self.hubs = hubs
         self.routes = routes
         self.now = now
         self.cargo_hazmat = cargo_hazmat
         self.cargo_aboard = cargo_aboard
+        self.enforce_no_harm = enforce_no_harm
         self.rejected: list[dict] = []
+        self.harmful: dict[tuple, list[dict]] = {}
         self.timeline: dict[str, set] = defaultdict(set)
         self.horizon = now + timedelta(hours=config.GRAPH_HORIZON_HOURS)
         self.buffer = timedelta(minutes=config.HANDLING_BUFFER_MINUTES)
@@ -156,10 +158,12 @@ class _Builder:
         chain += [{**s, "arrive": s["arrive"] + shift, "depart": s["depart"] + shift} for s in rest]
         victims = dt.harmed(self.cargo_aboard.get(v.id, ()), stops, chain)
         if victims:
-            self.rejected.append({"vehicle_id": v.id, "detour_hub": hub.id,
-                                  "detour_km": round(detour_km, 1), "victims": victims,
-                                  "continues_to": [s["hub"] for s in rest]})
-            return
+            self.harmful[(v.id, variant)] = victims
+            if self.enforce_no_harm:
+                self.rejected.append({"vehicle_id": v.id, "detour_hub": hub.id,
+                                      "detour_km": round(detour_km, 1), "victims": victims,
+                                      "continues_to": [s["hub"] for s in rest]})
+                return
         self.add_chain(v, chain, variant, detour_km=detour_km)
 
     def add_detours(self, v, stops):
@@ -216,18 +220,22 @@ def build_time_expanded_graph(hubs, vehicles, routes, current_time: datetime,
                               live_positions: dict | None = None,
                               exclude_vehicle_ids: set | None = None,
                               cargo_hazmat: dict | None = None,
-                              cargo_aboard: dict | None = None) -> nx.DiGraph:
+                              cargo_aboard: dict | None = None,
+                              enforce_no_harm: bool = True) -> nx.DiGraph:
     """Build the (hub, time) node graph with scheduled-leg edges.
 
     `hubs`/`routes` may be lists or {id: obj} dicts. `live_positions` maps
     vehicle_id -> (lat, lng) from Redis; `exclude_vehicle_ids` drops offline
     vehicles; `cargo_hazmat` maps vehicle_id -> hazmat classes already aboard;
     `cargo_aboard` maps vehicle_id -> [{shipment_id, drop_hub, deadline, priority}]
-    protected by the no-harm rule (see `cargo_aboard_from`).
+    protected by the no-harm rule (see `cargo_aboard_from`). With
+    `enforce_no_harm=False` (benchmark baseline) harmful detours stay in the graph.
+    Either way `g.graph["harmful_detours"]` maps (vehicle_id, variant) -> victims.
     """
     hubs = hubs if isinstance(hubs, dict) else {h.id: h for h in hubs}
     routes = routes if isinstance(routes, dict) else {r.id: r for r in routes}
-    b = _Builder(hubs, routes, current_time, cargo_hazmat or {}, cargo_aboard or {})
+    b = _Builder(hubs, routes, current_time, cargo_hazmat or {}, cargo_aboard or {},
+                 enforce_no_harm)
     b.g.graph["hubs"] = hubs
     for v in vehicles:
         if exclude_vehicle_ids and v.id in exclude_vehicle_ids:
@@ -241,6 +249,7 @@ def build_time_expanded_graph(hubs, vehicles, routes, current_time: datetime,
         b.add_live_detours(v, stops, pos)
     b.link_timelines()
     b.g.graph["rejected_detours"] = b.rejected
+    b.g.graph["harmful_detours"] = b.harmful
     return b.g
 
 
@@ -372,7 +381,7 @@ def summarize_path(graph, shipment, path) -> dict:
                 first_departure = graph.nodes[v]["time"]
         elif data["kind"] == "leg":
             legs.append({
-                "vehicle_id": data["vehicle_id"], "route_id": data["route_id"],
+                "vehicle_id": data["vehicle_id"], "route_id": data["route_id"], "variant": u[3],
                 "from_hub": data["from_hub"], "to_hub": data["to_hub"],
                 "departure_time": data["departure_time"], "arrival_time": data["arrival_time"],
                 "km": round(data["km"], 1), "remaining_kg": data["remaining_kg"],
