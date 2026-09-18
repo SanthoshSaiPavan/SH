@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Package, AlertTriangle, Truck, TrendingUp, DollarSign, ArrowRight, RotateCcw } from 'lucide-react'
 import AlertPanel from '../components/AlertPanel'
 import RecoveryModal from '../components/RecoveryModal'
 import ScoreGauge from '../components/ScoreGauge'
@@ -12,14 +13,13 @@ import type { Recommendation } from '../lib/schemas'
 import type { MapLinkState } from './MapView'
 
 export default function Dashboard() {
-  const { shipments, recommendations, activeRecoveries, progress, alerts, dashboard } = useLiveData()
+  const { shipments, recommendations, activeRecoveries, progress, dashboard, alerts } = useLiveData()
   const now = useEngineNow()
   const navigate = useNavigate()
   const [selected, setSelected] = useState<string | null>(null)
 
   const showOnMap = (state: MapLinkState) => navigate('/map', { state })
 
-  // Misplaced shipments open the recovery modal; anything else is shown on the map.
   const openShipment = (id: string) => {
     const s = shipments[id]
     if (!s) return
@@ -30,42 +30,114 @@ export default function Dashboard() {
   const opportunities = Object.values(recommendations)
     .filter((r) => shipments[r.shipment_id]?.status === 'misplaced')
     .sort((a, b) => b.score - a.score)
-    .slice(0, 3)
+    .slice(0, 2)
 
   return (
-    <div className="p-4">
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-          <StatsCard icon="📦" label="Active shipments" value={dashboard?.active_shipments ?? '—'} color="#3b82f6" />
-          <StatsCard icon="⚠" label="Misplaced today" value={dashboard?.misplaced_today ?? '—'} hint={`${dashboard?.misplaced_now ?? 0} awaiting recovery`} color="#ef4444" />
-          <StatsCard icon="🚚" label="Piggybacked now" value={dashboard?.piggybacked_now ?? '—'} color="#a855f7" />
-          <StatsCard icon="✔" label="Recovery rate" value={pct(dashboard?.recovery_rate)} hint={`${dashboard?.recoveries_in_progress ?? 0} in progress`} color="#10b981" />
-          <StatsCard icon="₹" label="Cost saved today" value={inr(dashboard?.cost_saved_today)} hint={`${inr(dashboard?.cost_saved_total)} total vs dedicated`} color="#64ffda" />
+    <div style={{ padding: '32px', maxWidth: '1440px', margin: '0 auto' }}>
+
+      {/* Bento-box Layout */}
+      <div style={{ display: 'flex', gap: '24px', alignItems: 'flex-start' }}>
+
+        {/* Left Column: KPIs (White cards on light gray background) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '320px', flexShrink: 0 }}>
+          <div style={{ marginBottom: '8px' }}>
+            <h1 style={{ fontSize: '24px', fontWeight: 600, letterSpacing: '-0.03em', margin: 0, color: 'var(--foreground)' }}>
+              Fleet performance overview
+            </h1>
+          </div>
+
+          <StatsCard label="Active Shipments" value={dashboard?.active_shipments ?? '—'} color="default" />
+          <StatsCard label="Misplaced Today" value={dashboard?.misplaced_today ?? '—'} hint={`${dashboard?.misplaced_now ?? 0} awaiting recovery`} color="danger" />
+          <StatsCard label="Piggybacked" value={dashboard?.piggybacked_now ?? '—'} color="accent" />
+          <StatsCard label="Recovery Rate" value={pct(dashboard?.recovery_rate)} hint={`${dashboard?.recoveries_in_progress ?? 0} in progress`} color="success" />
+          <StatsCard label="Cost Saved Today" value={inr(dashboard?.cost_saved_today)} hint={`${inr(dashboard?.cost_saved_total)} total`} color="success" />
+          
+          <div style={{ marginTop: '16px' }}>
+            <AlertPanel alerts={alerts} onSelect={openShipment} />
+          </div>
         </div>
 
-        {opportunities.map((r) => <OpportunityBanner key={r.shipment_id} rec={r} onOpen={() => openShipment(r.shipment_id)} />)}
+        {/* Right Column: Dark Panel (The main bento box) */}
+        <div className="dark-panel" style={{ flex: 1, padding: '32px', minHeight: '600px' }}>
+          
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px' }}>
+            <h2 style={{ fontSize: '20px', fontWeight: 500, letterSpacing: '-0.02em', margin: 0, color: 'var(--dark-foreground)' }}>
+              Intelligent Recovery Center
+            </h2>
+          </div>
 
-        <div className="grid lg:grid-cols-2 gap-4 h-80">
-          <AlertPanel alerts={alerts} onSelect={openShipment} />
-          <div className="card p-4 flex flex-col min-h-0">
-            <h3 className="font-semibold mb-3">🔄 Active recoveries <span className="text-xs text-muted">({activeRecoveries.length})</span></h3>
-            <div className="space-y-2 overflow-y-auto min-h-0 flex-1">
-              {activeRecoveries.length === 0 && <div className="text-sm text-muted">No recoveries in progress.</div>}
+          {/* Opportunities Section */}
+          {opportunities.length > 0 && (
+            <div style={{ marginBottom: '40px' }}>
+              <div style={{ fontSize: '13px', color: 'var(--dark-subtle)', marginBottom: '16px', fontWeight: 500 }}>
+                High-Impact Opportunities
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))', gap: '16px' }}>
+                {opportunities.map((r) => (
+                  <OpportunityBanner key={r.shipment_id} rec={r} onOpen={() => openShipment(r.shipment_id)} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Active Recoveries List */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--dark-subtle)', marginBottom: '16px', fontWeight: 500 }}>
+              <RotateCcw size={14} />
+              Active Recoveries in Progress
+            </div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {activeRecoveries.length === 0 && (
+                <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--dark-subtle)' }}>
+                  No active recoveries
+                </div>
+              )}
               {activeRecoveries.map((a) => {
                 const s = shipments[a.shipment_id]
                 const prog = progress[a.shipment_id]
                 const eta = (a.recovery_route as { arrival_time?: string } | null)?.arrival_time
+                const p = prog?.percent_complete ?? 3
                 return (
-                  <button key={a.id} className="w-full text-left p-2.5 rounded-lg bg-surface/60 hover:bg-surface" onClick={() => openShipment(a.shipment_id)}>
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="mono font-semibold">{a.shipment_id}</span>
-                      <span style={{ color: STRATEGY_META[a.action_type].color }}>→ {a.matched_vehicle_id ?? STRATEGY_META[a.action_type].label}</span>
-                      <span className="ml-auto mono text-xs">Score {a.overall_score.toFixed(0)}/100</span>
+                  <button
+                    key={a.id}
+                    onClick={() => openShipment(a.shipment_id)}
+                    style={{
+                      width: '100%', textAlign: 'left',
+                      padding: '16px 20px',
+                      background: 'var(--dark-surface-2)',
+                      border: '1px solid var(--dark-border)',
+                      borderRadius: 'var(--radius-lg)',
+                      cursor: 'pointer',
+                      transition: 'all 150ms',
+                    }}
+                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#2A2A2E'}
+                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'var(--dark-surface-2)'}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', fontWeight: 600, color: 'var(--dark-foreground)' }}>
+                        {a.shipment_id}
+                      </span>
+                      <ArrowRight size={14} style={{ color: 'var(--dark-subtle)' }} />
+                      <span style={{ fontSize: '13px', color: 'var(--accent)' }}>
+                        {a.matched_vehicle_id ?? title(a.action_type)}
+                      </span>
+                      <span style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--dark-subtle)' }}>
+                        Score: <b style={{ color: 'var(--dark-foreground)' }}>{a.overall_score.toFixed(0)}/100</b>
+                      </span>
                     </div>
-                    <div className="text-xs text-muted mt-1">
-                      {s ? title(s.status) : ''} · ETA {eta ? `${time(eta)} (${hours((parseUtc(eta).getTime() - now.getTime()) / 3.6e6)})` : '—'} · {inr(a.additional_cost)}
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--dark-muted)', marginBottom: '12px' }}>
+                      <span>
+                        {s ? title(s.status) : ''}
+                        {eta ? ` · ETA ${time(eta)} (${hours((parseUtc(eta).getTime() - now.getTime()) / 3.6e6)})` : ''}
+                      </span>
+                      <span style={{ fontFamily: 'var(--font-mono)' }}>Cost: {inr(a.additional_cost ?? 0)}</span>
                     </div>
-                    <div className="h-1 bg-bg rounded mt-1.5"><div className="h-full bg-piggy rounded transition-all" style={{ width: `${prog?.percent_complete ?? 3}%` }} /></div>
+
+                    <div style={{ height: '4px', background: 'var(--dark-border)', borderRadius: '9999px', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', background: 'var(--accent)', borderRadius: '9999px', width: `${p}%` }} />
+                    </div>
                   </button>
                 )
               })}
@@ -73,34 +145,91 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+
       {selected && shipments[selected] && (
-        <RecoveryModal shipment={shipments[selected]} onClose={() => setSelected(null)}
-          onViewRoute={(route) => showOnMap({ shipmentId: selected, route })} />
+        <RecoveryModal
+          shipment={shipments[selected]}
+          onClose={() => setSelected(null)}
+          onViewRoute={(route) => showOnMap({ shipmentId: selected, route })}
+        />
       )}
     </div>
   )
 }
 
 function OpportunityBanner({ rec, onOpen }: { rec: Recommendation; onOpen: () => void }) {
-  const meta = STRATEGY_META[rec.strategy]
-  const headline = rec.strategy === 'piggyback' ? 'PIGGYBACK OPPORTUNITY DETECTED' : `RECOMMENDED: ${meta.label.toUpperCase()}`
+  const isEscalated = rec.recovery_mode === 'escalated'
+  const label = rec.strategy === 'piggyback' ? 'Piggyback opportunity' : `Recommended: ${title(rec.strategy)}`
+  
   return (
-    <button onClick={onOpen} className="glass w-full p-4 flex items-center gap-4 text-left animate-slide-in hover:border-piggy"
-      style={{ borderColor: rec.recovery_mode === 'escalated' ? '#ef4444' : meta.color }}>
-      <ScoreGauge score={rec.score} size={58} />
-      <div className="flex-1 min-w-0">
-        <div className="font-bold tracking-wide" style={{ color: meta.color }}>{meta.icon} {headline}</div>
-        <div className="text-sm mt-0.5"><span className="mono font-semibold">{rec.shipment_id}</span>{rec.vehicle_id && <> → <span className="mono">{rec.vehicle_id}</span></>}
-          <span className="text-xs text-muted ml-2">{title(rec.recovery_mode)}</span></div>
-        {rec.reason && rec.reason !== 'initial recommendation' && <div className="text-xs text-warning mt-0.5">↻ {rec.reason}</div>}
-      </div>
-      <div className="grid grid-cols-3 gap-x-5 gap-y-1 text-xs text-muted">
-        <span>Pickup ETA<br /><b className="text-ink">{time(rec.pickup_eta)}</b></span>
-        <span>Delivery ETA<br /><b className="text-ink">{time(rec.delivery_eta)}</b> {rec.deadline_met ? '✅' : '🔴'}</span>
-        <span>Free capacity<br /><b className="text-ink">{rec.available_capacity !== null && rec.available_capacity !== undefined ? `${Math.round(rec.available_capacity)} kg` : '—'}</b></span>
-        <span>Recovery cost<br /><b className="text-ink">{inr(rec.recovery_cost)}</b></span>
-        <span>Saving vs dedicated<br /><b className="text-success">{inr(rec.cost_saving)}</b></span>
+    <button
+      onClick={onOpen}
+      className="animate-slide-in"
+      style={{
+        width: '100%', textAlign: 'left',
+        display: 'flex', alignItems: 'center', gap: '20px',
+        padding: '20px',
+        background: 'var(--dark-surface-2)',
+        border: '1px solid var(--dark-border)',
+        borderRadius: 'var(--radius-xl)',
+        cursor: 'pointer',
+        transition: 'all 150ms',
+      }}
+      onMouseEnter={e => {
+        const el = e.currentTarget as HTMLElement;
+        el.style.borderColor = 'rgba(255,255,255,0.2)';
+        el.style.background = '#2A2A2E';
+      }}
+      onMouseLeave={e => {
+        const el = e.currentTarget as HTMLElement;
+        el.style.borderColor = 'var(--dark-border)';
+        el.style.background = 'var(--dark-surface-2)';
+      }}
+    >
+      <ScoreGauge score={rec.score} size={64} />
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+          <span style={{ fontSize: '11px', fontWeight: 600, color: isEscalated ? 'var(--destructive)' : 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            {label}
+          </span>
+          {isEscalated && (
+            <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--destructive)', background: 'rgba(224,100,100,0.12)', padding: '2px 8px', borderRadius: '4px' }}>
+              ESCALATED
+            </span>
+          )}
+        </div>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '16px', fontWeight: 600, color: 'var(--dark-foreground)' }}>
+            {rec.shipment_id}
+          </span>
+          {rec.vehicle_id && (
+            <>
+              <ArrowRight size={14} style={{ color: 'var(--dark-subtle)' }} />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', color: 'var(--dark-muted)' }}>
+                {rec.vehicle_id}
+              </span>
+            </>
+          )}
+        </div>
+        
+        <div style={{ display: 'flex', gap: '24px' }}>
+          <Metric label="Delivery ETA" value={time(rec.delivery_eta)} valueColor={rec.deadline_met ? '#FFFFFF' : 'var(--destructive)'} />
+          <Metric label="Saving" value={inr(rec.cost_saving)} valueColor="var(--accent)" />
+        </div>
       </div>
     </button>
+  )
+}
+
+function Metric({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: '11px', color: 'var(--dark-subtle)', marginBottom: '4px' }}>{label}</div>
+      <div style={{ fontSize: '14px', fontWeight: 600, fontFamily: 'var(--font-mono)', color: valueColor ?? 'var(--dark-foreground)' }}>
+        {value}
+      </div>
+    </div>
   )
 }

@@ -32,7 +32,7 @@ function OperatorShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-full flex flex-col">
       <Navbar />
-      <main className="flex-1">{children}</main>
+      <main className="flex-1 overflow-y-auto overflow-x-hidden relative bg-[var(--background)]">{children}</main>
       <Toasts />
     </div>
   )

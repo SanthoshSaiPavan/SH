@@ -14,18 +14,17 @@ export default function MapView() {
   const navigate = useNavigate()
   const [filters, setFilters] = useState<Filters>({ hubType: [], priority: [], status: [] })
   const [selected, setSelected] = useState<string | null>(null)
-  const [viewRoute, setViewRoute] = useState<string[] | null>(null)
+  const [viewRoutes, setViewRoutes] = useState<RouteOverlay[] | null>(null)
   const [focus, setFocus] = useState<{ lng: number; lat: number } | null>(null)
 
   const filtered = useShipments(filters)
-  const onMap = useMemo(() => filtered.filter((s) =>
-    s.status === 'misplaced' || (s.recovery_strategy && !['recovered', 'delivered'].includes(s.status))), [filtered])
+  const onMap = useMemo(() => filtered.filter((s) => !['delivered', 'in_transit'].includes(s.status)), [filtered])
 
   const overlays = useMemo<RouteOverlay[]>(() => {
     const routes: RouteOverlay[] = activeRecoveries.map((a) => ({ id: a.id, hubs: a.recovery_route?.hubs ?? [], color: '#a855f7' }))
-    if (viewRoute) routes.push({ id: 'view', hubs: viewRoute, color: '#64ffda' })
+    if (viewRoutes) routes.push(...viewRoutes)
     return routes
-  }, [activeRecoveries, viewRoute])
+  }, [activeRecoveries, viewRoutes])
 
   const positionOf = useCallback((id: string) => {
     const s = shipments[id]
@@ -44,23 +43,23 @@ export default function MapView() {
   const linkReady = !link?.shipmentId || Boolean(shipments[link.shipmentId])
   useEffect(() => {
     if (!link || !linkReady) return
-    if (link.route) setViewRoute(link.route)
+    if (link.route) setViewRoutes([{ id: 'view', hubs: link.route, color: '#64ffda' }])
     const pos = link.shipmentId ? positionOf(link.shipmentId) : null
     if (pos) setFocus(pos)
     navigate(location.pathname, { replace: true, state: null })
   }, [link, linkReady, positionOf, navigate, location.pathname])
 
   return (
-    <div className="flex gap-4 p-4 h-[calc(100vh-3.5rem)]">
+    <div style={{ padding: '32px', maxWidth: '1440px', margin: '0 auto', height: 'calc(100vh - 70px)', display: 'flex', gap: '24px' }}>
       <Sidebar filters={filters} onChange={setFilters} />
       <div className="flex-1 min-w-0 flex flex-col gap-3">
         <LiveMap className="flex-1 min-h-[420px]" hubs={hubs} vehicles={vehicles} shipments={onMap} routes={overlays}
           onShipmentClick={openShipment} focus={focus} />
-        {viewRoute && <button className="btn self-start" onClick={() => setViewRoute(null)}>Clear highlighted route ({viewRoute.join(' → ')})</button>}
+        {viewRoutes && <button className="btn self-start" onClick={() => setViewRoutes(null)}>Clear highlighted route(s)</button>}
       </div>
       {selected && shipments[selected] && (
         <RecoveryModal shipment={shipments[selected]} onClose={() => setSelected(null)}
-          onViewRoute={(h) => { setViewRoute(h); setSelected(null) }} />
+          onViewRoutes={(r) => { setViewRoutes(r); setSelected(null) }} />
       )}
     </div>
   )
