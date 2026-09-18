@@ -85,6 +85,19 @@ export default function Driver() {
     return () => { cancelled = true; window.clearInterval(timer) }
   }, [allowFallback, sharing, gpsDown, noGeolocation, vehicleId, send])
 
+  // Heartbeat (test driver only): a stationary laptop fires watchPosition once and then goes quiet,
+  // so keep resending the last fix; otherwise the vehicle goes delayed/offline.
+  useEffect(() => {
+    if (!allowFallback || !sharing || gpsDown || noGeolocation) return
+    const timer = window.setInterval(() => {
+      if (!lastFix.current || Date.now() - lastSent.current < SEND_INTERVAL_MS) return
+      const f = { ...lastFix.current, speed: 0, at: new Date().toISOString() }
+      setFix(f)
+      send(f, 'Sharing last known position (no new GPS fix, test mode)')
+    }, SEND_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+  }, [allowFallback, sharing, gpsDown, noGeolocation, send])
+
   return (
     <div className="min-h-full flex flex-col">
       <header className="flex justify-end px-5 h-14 items-center">
