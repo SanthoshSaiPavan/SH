@@ -112,6 +112,8 @@ STALE_AFTER_SECONDS = 10
 OFFLINE_AFTER_SECONDS = 30
 STATUS_CHECK_INTERVAL_SECONDS = 3
 MAX_PLAUSIBLE_SPEED_KMH = 150.0
+# ASSUMPTION: testing-only exception — the one user (JWT sub) allowed to send out-of-order timestamps
+STALE_TIMESTAMP_EXEMPT_USER = "driver101"
 INDIA_BOUNDS = {"min_lat": 6.0, "max_lat": 37.5, "min_lng": 68.0, "max_lng": 97.5}
 LOCATION_FLUSH_SECONDS = 5
 RECOMPUTE_INTERVAL_SECONDS = 5

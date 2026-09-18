@@ -60,7 +60,8 @@ class LocationService:
         if not (b["min_lat"] <= lat <= b["max_lat"] and b["min_lng"] <= lng <= b["max_lng"]):
             return None, "coordinates outside India"
         prev_ts = self.last_ts.get(vid)
-        if prev_ts is not None and ts <= prev_ts:
+        if (prev_ts is not None and ts <= prev_ts
+                and claims.get("sub") != config.STALE_TIMESTAMP_EXEMPT_USER):
             return None, "stale timestamp"
         if prev_ts is not None:
             hours = (ts - prev_ts).total_seconds() / 3600

@@ -5,6 +5,7 @@ import Toasts from './components/Toasts'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { LiveDataProvider } from './hooks/useLiveData'
 import { SocketProvider } from './hooks/useSocket'
+import { TEST_DRIVER_USERNAME } from './lib/constants'
 import Analytics from './pages/Analytics'
 import Dashboard from './pages/Dashboard'
 import Driver from './pages/Driver'
@@ -27,8 +28,19 @@ function OperatorShell({ children }: { children: ReactNode }) {
 }
 
 function DriverShell() {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   if (!user) return <Navigate to="/login" replace />
+  if (user.username !== TEST_DRIVER_USERNAME) {
+    return (
+      <div className="min-h-full grid place-items-center p-6">
+        <div className="glass p-6 w-full max-w-sm space-y-4 text-center">
+          <div className="text-xl font-bold">Access denied</div>
+          <div className="text-sm text-muted">The driver dashboard is currently limited to {TEST_DRIVER_USERNAME}.</div>
+          <button className="btn" onClick={logout}>Logout</button>
+        </div>
+      </div>
+    )
+  }
   return <Driver />
 }
 

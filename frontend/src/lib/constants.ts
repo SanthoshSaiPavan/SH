@@ -51,3 +51,6 @@ export const MARKER_ANIMATION_MS = 2000
 export const STRATEGY_CHART_COLORS: Record<StrategyType, string> = {
   piggyback: '#3987e5', reroute: '#d95926', dedicated: '#199e70', hold: '#c98500',
 }
+
+/** Testing-only: the one driver allowed on /driver, with a no-GPS fallback (mirrors backend STALE_TIMESTAMP_EXEMPT_USER). */
+export const TEST_DRIVER_USERNAME = 'driver101'
