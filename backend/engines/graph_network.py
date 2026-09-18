@@ -17,9 +17,15 @@ Edge kinds:
     wait     hub -> hub     waiting at a hub (holding cost)
     entry    entry -> hub   bringing the shipment onto the nearest hub timeline
 
-`variant` is "main" for a vehicle's planned schedule, or "detour:<hub>" for a
-copy of its remaining schedule shifted by a detour to an off-route hub within
-MAX_DETOUR_KM of a leg. Edge costs are computed per shipment at search time.
+`variant` is "main" for a vehicle's planned schedule, or a detour: a copy of its
+remaining schedule shifted by a stop at an off-route hub within MAX_DETOUR_KM of
+the road. Two detour kinds:
+    "detour:<idx>:<hub>"   on the leg between remaining stops idx and idx+1
+    "detour:live:<hub>"    on the leg the vehicle is driving now, for hubs ahead of it
+Every node and edge of a detour chain carries `detour=True`. A detour that makes a
+shipment aboard the vehicle (`cargo_aboard`) miss a deadline it would otherwise
+meet is not added (no-harm rule); it is recorded in `g.graph["rejected_detours"]`.
+Edge costs are computed per shipment at search time.
 """
 from __future__ import annotations
 
@@ -30,6 +36,8 @@ from functools import lru_cache
 import networkx as nx
 
 import config
+from engines import detours as dt
+from engines.detours import cargo_aboard_from  # noqa: F401  (public: realtime loop, benchmark)
 from utils import roads
 from utils.geo import haversine, point_to_line_distance
 
@@ -79,15 +87,18 @@ def vehicle_schedule(vehicle, hubs: dict, now: datetime, position=None) -> list[
 
 
 class _Builder:
-    def __init__(self, hubs, routes, now, cargo_hazmat):
+    def __init__(self, hubs, routes, now, cargo_hazmat, cargo_aboard):
         self.g = nx.DiGraph(now=now)
         self.hubs = hubs
         self.routes = routes
         self.now = now
         self.cargo_hazmat = cargo_hazmat
+        self.cargo_aboard = cargo_aboard
+        self.rejected: list[dict] = []
         self.timeline: dict[str, set] = defaultdict(set)
         self.horizon = now + timedelta(hours=config.GRAPH_HORIZON_HOURS)
         self.buffer = timedelta(minutes=config.HANDLING_BUFFER_MINUTES)
+        self.dwell = timedelta(minutes=config.HUB_DWELL_MINUTES)
 
     def hub_node(self, hub_id: str, time: datetime):
         node = ("hub", hub_id, time)
@@ -112,23 +123,24 @@ class _Builder:
 
     def add_chain(self, v, stops, variant, detour_km=0.0):
         """Add one vehicle schedule chain. The first stop is boardable only (no inbound leg)."""
-        attrs = self.vehicle_attrs(v)
+        attrs = {**self.vehicle_attrs(v), "detour": variant != "main"}
+        flag = attrs["detour"]
         for pos, stop in enumerate(stops):
             key = (v.id, stop["idx"], variant)
             arr, dep = ("arr",) + key, ("dep",) + key
             is_last = pos == len(stops) - 1
             self.g.add_node(arr, hub=stop["hub"], time=stop["arrive"], kind="arr", **attrs)
             self.g.add_edge(arr, self.hub_node(stop["hub"], stop["arrive"]), kind="unload",
-                            vehicle_id=v.id)
+                            vehicle_id=v.id, detour=flag)
             if is_last or stop["depart"] > self.horizon:
                 continue
             self.g.add_node(dep, hub=stop["hub"], time=stop["depart"], kind="dep", **attrs)
-            self.g.add_edge(arr, dep, kind="onboard", vehicle_id=v.id)
+            self.g.add_edge(arr, dep, kind="onboard", vehicle_id=v.id, detour=flag)
             board_time = stop["depart"] - self.buffer
             if board_time >= self.now:
                 self.g.add_edge(self.hub_node(stop["hub"], board_time), dep, kind="board",
-                                vehicle_id=v.id,
-                                detour_km=detour_km if pos == 0 and variant != "main" else 0.0,
+                                vehicle_id=v.id, detour=flag,
+                                detour_km=detour_km if pos == 0 and flag else 0.0,
                                 cost_per_km=attrs["cost_per_km"])
             nxt = stops[pos + 1]
             self.g.add_edge(dep, ("arr", v.id, nxt["idx"], variant), kind="leg",
@@ -136,9 +148,22 @@ class _Builder:
                             departure_time=stop["depart"], arrival_time=nxt["arrive"],
                             km=road_km(self.hubs[stop["hub"]], self.hubs[nxt["hub"]]), **attrs)
 
+    def add_detour(self, v, stops, hub, arrive_h: datetime, rest: list[dict], h_to_next: float,
+                   idx_tag: str, variant: str, detour_km: float):
+        """Stop at `hub` at arrive_h, then drive on to rest[0] and shift every remaining stop."""
+        shift = (arrive_h + self.dwell + _hours(h_to_next, v.speed_kmh)) - rest[0]["arrive"]
+        chain = [{"idx": idx_tag, "hub": hub.id, "arrive": arrive_h, "depart": arrive_h + self.dwell}]
+        chain += [{**s, "arrive": s["arrive"] + shift, "depart": s["depart"] + shift} for s in rest]
+        victims = dt.harmed(self.cargo_aboard.get(v.id, ()), stops, chain)
+        if victims:
+            self.rejected.append({"vehicle_id": v.id, "detour_hub": hub.id,
+                                  "detour_km": round(detour_km, 1), "victims": victims,
+                                  "continues_to": [s["hub"] for s in rest]})
+            return
+        self.add_chain(v, chain, variant, detour_km=detour_km)
+
     def add_detours(self, v, stops):
         route_hubs = set(v.planned_route or [])
-        dwell = timedelta(minutes=config.HUB_DWELL_MINUTES)
         for pos in range(len(stops) - 1):
             a, b = self.hubs[stops[pos]["hub"]], self.hubs[stops[pos + 1]["hub"]]
             for hub in self.hubs.values():
@@ -148,14 +173,37 @@ class _Builder:
                                        (a.lat, a.lng), (b.lat, b.lng)) > config.MAX_DETOUR_KM:
                     continue
                 to_h, h_to_b, direct = road_km(a, hub), road_km(hub, b), road_km(a, b)
-                detour_km = max(0.0, to_h + h_to_b - direct)
-                arrive_h = stops[pos]["depart"] + _hours(to_h, v.speed_kmh)
-                shift = (arrive_h + dwell + _hours(h_to_b, v.speed_kmh)) - stops[pos + 1]["arrive"]
-                chain = [{"idx": f"{stops[pos]['idx']}d", "hub": hub.id,
-                          "arrive": arrive_h, "depart": arrive_h + dwell}]
-                chain += [{**s, "arrive": s["arrive"] + shift, "depart": s["depart"] + shift}
-                          for s in stops[pos + 1:]]
-                self.add_chain(v, chain, f"detour:{hub.id}", detour_km=detour_km)
+                self.add_detour(v, stops, hub, stops[pos]["depart"] + _hours(to_h, v.speed_kmh),
+                                stops[pos + 1:], h_to_b, f"{stops[pos]['idx']}d",
+                                f"detour:{stops[pos]['idx']}:{hub.id}",
+                                max(0.0, to_h + h_to_b - direct))
+
+    def add_live_detours(self, v, stops, position):
+        """Detours on the leg being driven now, to off-route hubs ahead of the vehicle."""
+        if v.status == "at_hub":
+            return
+        route = v.planned_route or []
+        idx = stops[0]["idx"]
+        prev_id = route[idx - 1] if idx > 0 else None
+        nxt = self.hubs[stops[0]["hub"]]
+        pos = position or (v.current_lat, v.current_lng)
+        prev = self.hubs.get(prev_id)
+        near = [h for h in self.hubs.values() if h.id not in set(route) and (  # whole-leg prefilter
+            _distance_to_leg_km(prev.id, nxt.id, h.id, (h.lat, h.lng), (prev.lat, prev.lng),
+                                (nxt.lat, nxt.lng))
+            if prev else point_to_line_distance((h.lat, h.lng), pos, (nxt.lat, nxt.lng))
+        ) <= config.MAX_DETOUR_KM]
+        if not near:
+            return
+        ahead, scale = dt.road_ahead(prev_id, nxt, pos)
+        direct = roads.km_to_hub(prev_id, nxt, *pos)
+        for hub in near:
+            to_h = dt.km_along_to(ahead, scale, hub)
+            if to_h is None:
+                continue
+            h_to_b = road_km(hub, nxt)
+            self.add_detour(v, stops, hub, self.now + _hours(to_h, v.speed_kmh), stops, h_to_b,
+                            f"{idx}p", f"detour:live:{hub.id}", max(0.0, to_h + h_to_b - direct))
 
     def link_timelines(self):
         for hub_id, times in self.timeline.items():
@@ -167,16 +215,19 @@ class _Builder:
 def build_time_expanded_graph(hubs, vehicles, routes, current_time: datetime,
                               live_positions: dict | None = None,
                               exclude_vehicle_ids: set | None = None,
-                              cargo_hazmat: dict | None = None) -> nx.DiGraph:
+                              cargo_hazmat: dict | None = None,
+                              cargo_aboard: dict | None = None) -> nx.DiGraph:
     """Build the (hub, time) node graph with scheduled-leg edges.
 
     `hubs`/`routes` may be lists or {id: obj} dicts. `live_positions` maps
     vehicle_id -> (lat, lng) from Redis; `exclude_vehicle_ids` drops offline
-    vehicles; `cargo_hazmat` maps vehicle_id -> hazmat classes already aboard.
+    vehicles; `cargo_hazmat` maps vehicle_id -> hazmat classes already aboard;
+    `cargo_aboard` maps vehicle_id -> [{shipment_id, drop_hub, deadline, priority}]
+    protected by the no-harm rule (see `cargo_aboard_from`).
     """
     hubs = hubs if isinstance(hubs, dict) else {h.id: h for h in hubs}
     routes = routes if isinstance(routes, dict) else {r.id: r for r in routes}
-    b = _Builder(hubs, routes, current_time, cargo_hazmat or {})
+    b = _Builder(hubs, routes, current_time, cargo_hazmat or {}, cargo_aboard or {})
     b.g.graph["hubs"] = hubs
     for v in vehicles:
         if exclude_vehicle_ids and v.id in exclude_vehicle_ids:
@@ -187,7 +238,9 @@ def build_time_expanded_graph(hubs, vehicles, routes, current_time: datetime,
             continue
         b.add_chain(v, stops, "main")
         b.add_detours(v, stops)
+        b.add_live_detours(v, stops, pos)
     b.link_timelines()
+    b.g.graph["rejected_detours"] = b.rejected
     return b.g
 
 

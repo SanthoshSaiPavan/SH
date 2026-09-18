@@ -58,11 +58,14 @@ def fact_sheet(shipment, evaluation: re_.Evaluation, recommended=None) -> dict:
         "dedicated_vehicle_cost": round(evaluation.dedicated_cost, 2),
         "recommended": best.to_dict() if best else None,
         "alternatives": [
-            {"type": s.type, "score": s.score, "cost": round(s.cost, 2), "feasible": s.feasible,
-             "deadline_met": s.deadline_met, "buffer_hours": round(s.buffer_hours, 2),
-             "vehicle_id": s.vehicle_id}
-            for s in evaluation.strategies if s is not best
+            {"id": s.id, "type": s.type, "score": s.score, "cost": round(s.cost, 2),
+             "feasible": s.feasible, "deadline_met": s.deadline_met,
+             "buffer_hours": round(s.buffer_hours, 2), "vehicle_id": s.vehicle_id,
+             "on_time_probability": round(s.on_time_probability, 3),
+             "pareto_label": s.pareto_label}
+            for s in evaluation.strategies if s.id != (best.id if best else None)
         ],
+        "rejected_options": evaluation.rejected_options,
     }
 
 
@@ -86,7 +89,10 @@ def template_explanation(facts: dict) -> str:
     parts.append(f"Estimated arrival {rec['arrival_time']}, "
                  + (f"{rec['buffer_hours']:.1f} h before the deadline."
                     if rec["deadline_met"] else
-                    f"{-rec['buffer_hours']:.1f} h after the deadline."))
+                    f"{-rec['buffer_hours']:.1f} h after the deadline.")
+                 + f" P(on-time) {rec['on_time_probability']:.2f}.")
+    for r in facts.get("rejected_options") or []:
+        parts.append(f"{r['vehicle_id']} was rejected: {r['reason']}.")
     saving = facts["dedicated_vehicle_cost"] - rec["cost"]
     parts.append(f"Cost {_money(rec['cost'])}"
                  + (f", {_money(saving)} less than a dedicated vehicle "
@@ -191,7 +197,8 @@ def run_what_if(shipment, evaluation: re_.Evaluation, hypothetical_strategy_type
                 recommended=None) -> dict:
     """Compare a hypothetical strategy (already scored by Module 3) with the current pick."""
     current = recommended or evaluation.best
-    alt = next((s for s in evaluation.strategies if s.type == hypothetical_strategy_type), None)
+    alt = evaluation.strategy(hypothetical_strategy_type) or next(
+        (s for s in evaluation.strategies if s.type == hypothetical_strategy_type), None)
     if alt is None:
         return {"error": f"Unknown strategy type '{hypothetical_strategy_type}'"}
     return {
