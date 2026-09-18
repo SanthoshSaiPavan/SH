@@ -64,6 +64,27 @@ def test_without_cargo_truck_102_detours_live_at_warangal(world):
     assert t102.arrival_time < world["shipments"]["SHP-501"].deadline
 
 
+def test_harmful_detours_recorded_and_kept_when_not_enforced(world):
+    key = ("TRUCK-102", "detour:live:HUB-WGL-01")
+    enforced = graph_for(world)
+    assert [v["shipment_id"] for v in enforced.graph["harmful_detours"][key]] == ["SHP-311"]
+    assert ("arr", "TRUCK-102", "1p", key[1]) not in enforced
+    g = graph_for(world, enforce_no_harm=False)
+    assert g.graph["rejected_detours"] == []
+    assert g.graph["harmful_detours"][key] == enforced.graph["harmful_detours"][key]
+    assert ("arr", "TRUCK-102", "1p", key[1]) in g
+
+
+def test_legs_carry_their_variant(world):
+    g = graph_for(world, enforce_no_harm=False)
+    candidates = pm.find_piggyback_matches(world["shipments"]["SHP-501"], g, world["now"])
+    by_vehicle = {c.vehicle_id: c for c in candidates}
+    [leg] = by_vehicle["TRUCK-102"].legs
+    assert leg["variant"] == "detour:live:HUB-WGL-01"
+    assert (leg["vehicle_id"], leg["variant"]) in g.graph["harmful_detours"]
+    assert all(leg["variant"] == "main" for leg in by_vehicle["TRUCK-104"].legs)
+
+
 def test_harmless_detour_is_kept(world):
     world["shipments"]["SHP-311"].deadline += timedelta(hours=24)  # plenty of slack
     g = graph_for(world)
