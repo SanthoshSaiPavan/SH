@@ -2,7 +2,7 @@ import type { Alert } from '../lib/schemas'
 import { title } from '../lib/format'
 import { Bell, AlertTriangle, AlertOctagon, AlertCircle, Info } from 'lucide-react'
 
-const SEV: Record<string, { color: string; bg: string; border: string; Icon: React.FC<{ size?: number }> }> = {
+const SEV: Record<string, { color: string; bg: string; border: string; Icon: any }> = {
   critical: { color: 'var(--destructive)', bg: 'rgba(230,57,70,0.05)', border: 'rgba(230,57,70,0.15)', Icon: AlertOctagon },
   high:     { color: '#D97B44',            bg: 'rgba(217,123,68,0.05)',  border: 'rgba(217,123,68,0.15)',  Icon: AlertTriangle },
   medium:   { color: 'var(--warning)',     bg: 'rgba(244,162,97,0.05)',  border: 'rgba(244,162,97,0.15)',  Icon: AlertCircle },

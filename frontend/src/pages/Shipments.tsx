@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import RecoveryModal from '../components/RecoveryModal'
+import { useNavigate } from 'react-router-dom'
 import { useEngineNow } from '../hooks/useEngineNow'
 import { useLiveData, useShipments } from '../hooks/useLiveData'
 import { PRIORITY_META, STATUS_COLORS } from '../lib/constants'
@@ -11,6 +12,7 @@ const STATUSES = ['in_transit', 'misplaced', 'piggybacked', 'recovered', 'delive
 export default function Shipments() {
   const { shipments } = useLiveData()
   const now = useEngineNow()
+  const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [status, setStatus] = useState<string[]>([])
   const [selected, setSelected] = useState<string | null>(null)
@@ -174,7 +176,10 @@ export default function Shipments() {
         <RecoveryModal
           shipment={shipments[selected]}
           onClose={() => setSelected(null)}
-          onViewRoute={() => setSelected(null)}
+          onViewRoutes={(routes) => {
+            setSelected(null)
+            navigate('/map', { state: { shipmentId: selected, route: routes[0]?.hubs } })
+          }}
         />
       )}
     </div>

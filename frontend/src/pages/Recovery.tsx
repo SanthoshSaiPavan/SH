@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
+import { useNavigate } from 'react-router-dom'
 import RecoveryModal from '../components/RecoveryModal'
 import ShipmentCard from '../components/ShipmentCard'
 import { useEngineNow } from '../hooks/useEngineNow'
@@ -14,6 +15,7 @@ export default function Recovery() {
   const now = useEngineNow()
   const [selected, setSelected] = useState<string | null>(null)
   const [history, setHistory] = useState<RecoveryAction[]>([])
+  const navigate = useNavigate()
 
   // History is loaded on page entry and whenever the set of active recoveries changes.
   useEffect(() => {
@@ -62,7 +64,7 @@ export default function Recovery() {
         </div>
       </section>
       {selected && shipments[selected] && (
-        <RecoveryModal shipment={shipments[selected]} onClose={() => setSelected(null)} onViewRoute={() => setSelected(null)} />
+        <RecoveryModal shipment={shipments[selected]} onClose={() => setSelected(null)} onViewRoutes={(routes) => { setSelected(null); navigate('/map', { state: { shipmentId: selected, route: routes[0]?.hubs } }) }} />
       )}
     </div>
   )

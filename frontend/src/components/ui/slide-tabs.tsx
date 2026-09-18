@@ -70,7 +70,7 @@ export const SlideTabs = () => {
         <Tab
           key={item.label}
           path={item.path}
-          ref={(el) => (tabsRef.current[i] = el)}
+          ref={(el) => { tabsRef.current[i] = el; }}
           setPosition={setPosition}
         >
           <div className="flex items-center gap-2">

@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Package, AlertTriangle, Truck, TrendingUp, DollarSign, ArrowRight, RotateCcw } from 'lucide-react'
+import { ArrowRight, RotateCcw } from 'lucide-react'
 import AlertPanel from '../components/AlertPanel'
 import RecoveryModal from '../components/RecoveryModal'
 import ScoreGauge from '../components/ScoreGauge'
 import StatsCard from '../components/StatsCard'
 import { useEngineNow } from '../hooks/useEngineNow'
 import { useLiveData } from '../hooks/useLiveData'
-import { STRATEGY_META } from '../lib/constants'
 import { hours, inr, parseUtc, pct, time, title } from '../lib/format'
 import type { Recommendation } from '../lib/schemas'
 import type { MapLinkState } from './MapView'
@@ -150,7 +149,7 @@ export default function Dashboard() {
         <RecoveryModal
           shipment={shipments[selected]}
           onClose={() => setSelected(null)}
-          onViewRoute={(route) => showOnMap({ shipmentId: selected, route })}
+          onViewRoutes={(routes) => showOnMap({ shipmentId: selected, route: routes[0]?.hubs })}
         />
       )}
     </div>
