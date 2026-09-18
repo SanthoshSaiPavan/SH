@@ -2,21 +2,54 @@
 
 Called for every accepted location update. Detects hub arrival/departure,
 scans shipments aboard, delivers them, and moves recovery shipments between
-hub and vehicle following the legs saved on their RecoveryAction.
+hub and vehicle following the legs saved on their RecoveryAction. Every
+physical load/unload/hub scan writes a ScanEvent (Module 1's evidence), and a
+vehicle reaching a hub without a parcel manifested to arrive there raises a 'short'.
 Returns socket events as (event, payload, shipment_id, vehicle_id) tuples.
 """
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from database.models import Hub, RecoveryAction, Shipment, Vehicle
-from utils import roads
+from database.models import Hub, RecoveryAction, ScanEvent, Shipment, Vehicle
+from engines.anomaly_detector import ACTIVE_STATUSES, expected_segment
+from utils import clock, roads
 from utils.geo import haversine
 
 ARRIVAL_RADIUS_KM = 2.0  # ASSUMPTION: within this distance of the next stop = arrived
 VEHICLE_RECOVERIES = ("piggyback", "hold")
+
+
+def record_scan(shipment: Shipment, event_type: str, now: datetime, hub_id: str | None = None,
+                vehicle_id: str | None = None, expected: bool = True,
+                note: str | None = None) -> ScanEvent:
+    """Append a scan event to the shipment (saved with it by the caller's session)."""
+    event = ScanEvent(id=f"SCN-{uuid.uuid4().hex[:10]}", shipment_id=shipment.id,
+                      event_type=event_type, hub_id=hub_id, vehicle_id=vehicle_id,
+                      expected=expected, note=note, scanned_at=now)
+    shipment.scans.append(event)
+    return event
+
+
+def short_targets(vehicle_id: str, hub_id: str, manifested) -> list:
+    """Shipments manifested on the vehicle, due at this hub, but not aboard: each gets a 'short'.
+
+    At most one short per shipment per hub; shipments in recovery or already flagged are skipped.
+    """
+    targets = []
+    for s in manifested:
+        if (s.manifest_vehicle_id != vehicle_id or s.current_vehicle_id == vehicle_id
+                or s.status not in ACTIVE_STATUSES or s.recovery_strategy):
+            continue
+        if expected_segment(s)[1] != hub_id:
+            continue
+        if any(e.event_type == "short" and e.hub_id == hub_id for e in s.scans):
+            continue
+        targets.append(s)
+    return targets
 
 
 def active_action(db: Session, shipment_id: str) -> RecoveryAction | None:
@@ -41,8 +74,11 @@ def _place_at_hub(shipment: Shipment, hub: Hub) -> None:
 
 def complete_recovery(db: Session, shipment: Shipment, action: RecoveryAction, now: datetime):
     hub = db.get(Hub, shipment.destination_hub_id)
+    record_scan(shipment, "unload", now, hub.id, shipment.current_vehicle_id,
+                note="recovery delivered")
     _place_at_hub(shipment, hub)
     shipment.status = "recovered"
+    shipment.manifest_vehicle_id = None
     shipment.actual_route = list(shipment.actual_route or []) + [hub.id]
     shipment.last_scan_at = now
     action.status = "completed"
@@ -70,8 +106,11 @@ def _recovery_arrival(db, vehicle, hub, shipment, action, now) -> list:
     shipment.actual_route = list(shipment.actual_route or []) + [hub.id]
     shipment.last_scan_at = now
     if legs[idx + 1]["vehicle_id"] != vehicle.id:
+        record_scan(shipment, "unload", now, hub.id, vehicle.id, note="recovery transfer")
         _release(vehicle, shipment)
         _place_at_hub(shipment, hub)
+    else:
+        record_scan(shipment, "hub_scan", now, hub.id, vehicle.id)
     return [("recovery:progress", {"shipment_id": shipment.id, "percent_complete": percent,
                                    "eta": legs[-1]["arrival_time"], "at_hub": hub.id},
              shipment.id, vehicle.id)]
@@ -96,12 +135,23 @@ def _recovery_pickup(db, vehicle, hub, now) -> list:
             vehicle.used_capacity_cbm += shipment.volume_cbm
         shipment.current_vehicle_id = vehicle.id
         shipment.current_hub_id = None
+        shipment.manifest_vehicle_id = vehicle.id  # the recovery legs are the new manifest
+        record_scan(shipment, "load", now, hub.id, vehicle.id, note=f"recovery {action.action_type}")
         shipment.status = "piggybacked" if action.action_type == "piggyback" else "in_transit"
         events.append(("recovery:progress",
                        {"shipment_id": shipment.id, "percent_complete": round(100 * idx / len(legs), 1),
                         "eta": legs[-1]["arrival_time"], "loaded_on": vehicle.id},
                        shipment.id, vehicle.id))
     return events
+
+
+def _raise_shorts(db: Session, vehicle: Vehicle, hub: Hub, now: datetime) -> None:
+    manifested = db.query(Shipment).filter(Shipment.manifest_vehicle_id == vehicle.id,
+                                           Shipment.status.in_(ACTIVE_STATUSES),
+                                           Shipment.recovery_strategy.is_(None)).all()
+    for shipment in short_targets(vehicle.id, hub.id, manifested):
+        record_scan(shipment, "short", now, hub.id, vehicle.id, expected=False,
+                    note=f"manifested on {vehicle.id} for {hub.id} but not aboard at unload")
 
 
 def arrive(db: Session, vehicle: Vehicle, hub: Hub, now: datetime) -> list:
@@ -113,16 +163,22 @@ def arrive(db: Session, vehicle: Vehicle, hub: Hub, now: datetime) -> list:
         if action is not None and action.action_type in VEHICLE_RECOVERIES:
             events += _recovery_arrival(db, vehicle, hub, shipment, action, now)
             continue
+        shipment.current_lat, shipment.current_lng = hub.lat, hub.lng
         if shipment.status == "misplaced":
-            shipment.current_lat, shipment.current_lng = hub.lat, hub.lng
             continue  # stays aboard the wrong vehicle until a recovery is executed
+        if hub.id not in (shipment.expected_route or []):
+            continue  # a stop off its route (e.g. a detour): the parcel stays aboard, unscanned
         shipment.actual_route = list(shipment.actual_route or []) + [hub.id]
         shipment.last_scan_at = now
-        shipment.current_lat, shipment.current_lng = hub.lat, hub.lng
         if hub.id == shipment.destination_hub_id:
+            record_scan(shipment, "unload", now, hub.id, vehicle.id)
             _release(vehicle, shipment)
             _place_at_hub(shipment, hub)
             shipment.status = "delivered"
+            shipment.manifest_vehicle_id = None
+        else:
+            record_scan(shipment, "hub_scan", now, hub.id, vehicle.id)
+    _raise_shorts(db, vehicle, hub, now)
     events += _recovery_pickup(db, vehicle, hub, now)
     return events
 
@@ -188,11 +244,61 @@ def progress_virtual_recoveries(db: Session, now: datetime) -> list:
 
 def detach_for_recovery(db: Session, shipment: Shipment, start_hub_id: str) -> None:
     """Bring an off-hub (e.g. wrong-vehicle) shipment to its recovery start hub."""
-    if shipment.current_vehicle_id:
-        vehicle = db.get(Vehicle, shipment.current_vehicle_id)
+    carrier = shipment.current_vehicle_id
+    if carrier:
+        vehicle = db.get(Vehicle, carrier)
         if vehicle is not None:
             _release(vehicle, shipment)
     hub = db.get(Hub, start_hub_id)
     if hub is not None:
         _place_at_hub(shipment, hub)
+        record_scan(shipment, "unload" if carrier else "hub_scan", clock.now(), hub.id, carrier,
+                    note="brought to recovery start hub")
 
+
+def _reserved_vehicle_id(shipment: Shipment, action: RecoveryAction | None) -> str | None:
+    """Vehicle holding capacity for this shipment: the one carrying it, or the first recovery
+    vehicle (reserved at execution) while the shipment waits at that leg's pickup hub."""
+    if shipment.current_vehicle_id:
+        return shipment.current_vehicle_id
+    legs = (action.recovery_route or {}).get("legs") if action else None
+    if legs and shipment.current_hub_id == legs[0]["from_hub"]:
+        return legs[0]["vehicle_id"]
+    return None
+
+
+def cancel_recovery(db: Session, shipment: Shipment, now: datetime) -> bool:
+    """Fail the in-progress recovery (if any) and clear the shipment's recovery fields.
+
+    Frees capacity reserved for a shipment still waiting at its pickup hub; a shipment
+    already aboard keeps its space until `end_carriage`. Returns True if one was cancelled.
+    """
+    action = active_action(db, shipment.id)
+    if action is None:
+        return False
+    if not shipment.current_vehicle_id:
+        vid = _reserved_vehicle_id(shipment, action)
+        vehicle = db.get(Vehicle, vid) if vid else None
+        if vehicle is not None:
+            _release(vehicle, shipment)
+    action.status = "failed"
+    action.completed_at = now
+    shipment.recovery_strategy = None
+    shipment.recovery_vehicle_id = None
+    shipment.recovery_mode = None
+    shipment.recovery_score = None
+    return True
+
+
+def end_carriage(db: Session, shipment: Shipment, hub_id: str) -> None:
+    """Take the shipment off whatever vehicle carries it and put it at `hub_id`."""
+    if shipment.current_vehicle_id:
+        vehicle = db.get(Vehicle, shipment.current_vehicle_id)
+        if vehicle is not None:
+            _release(vehicle, shipment)
+    shipment.manifest_vehicle_id = None
+    hub = db.get(Hub, hub_id)
+    if hub is not None:
+        _place_at_hub(shipment, hub)
+    else:
+        shipment.current_vehicle_id = None

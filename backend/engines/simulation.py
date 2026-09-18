@@ -95,7 +95,15 @@ class SimulationEngine:
                 log.warning("Simulator update rejected for %s: %s", pos["vehicle_id"], err)
 
     def misplace(self, db, shipment_id: str | None = None, kind: str | None = None) -> dict:
-        """Misplace a shipment (random when not specified). Returns what happened."""
+        """Misplace a shipment (random when not specified). Returns what happened.
+
+        Changes the physical ground truth and writes only the scans a real network would
+        produce; detection then has to find it from those scans:
+          wrong_hub      unloaded at an off-route hub   -> 'excess' scan there
+          wrong_vehicle  loaded onto another vehicle    -> 'load' scan onto it (manifest unchanged)
+          stuck          left behind at its last hub    -> no scan; a 'short' is raised when its
+                         manifest vehicle reaches the next hub (scan gap/time anomaly as fallback)
+        """
         query = db.query(Shipment).filter(Shipment.status == "in_transit",
                                           Shipment.recovery_strategy.is_(None),
                                           Shipment.current_vehicle_id.isnot(None))
@@ -117,6 +125,8 @@ class SimulationEngine:
             fleet_progress._place_at_hub(shipment, hub)
             shipment.actual_route = list(shipment.actual_route or []) + [hub.id]
             shipment.last_scan_at = now
+            fleet_progress.record_scan(shipment, "excess", now, hub.id, expected=False,
+                                       note="scanned at a hub not on its expected route")
             detail = f"unloaded at {hub.id}"
         elif kind == "wrong_vehicle":
             others = [v for v in db.query(Vehicle).all()
@@ -133,6 +143,12 @@ class SimulationEngine:
             shipment.current_vehicle_id = wrong.id
             shipment.current_hub_id = None
             shipment.current_lat, shipment.current_lng = wrong.current_lat, wrong.current_lng
+            shipment.last_scan_at = now
+            next_hub = anomaly_detector.expected_segment(shipment)[1]
+            at_hub = wrong.planned_route[wrong.current_stop_index] if wrong.status == "at_hub" else None
+            fleet_progress.record_scan(shipment, "load", now, at_hub, wrong.id,
+                                       expected=anomaly_detector.vehicle_serves(wrong, next_hub),
+                                       note=f"manifested on {shipment.manifest_vehicle_id}")
             detail = f"loaded onto {wrong.id}"
         elif kind == "stuck":
             last = next((h for h in reversed(shipment.actual_route or []) if h in expected),
@@ -141,8 +157,7 @@ class SimulationEngine:
             if vehicle:
                 fleet_progress._release(vehicle, shipment)
             fleet_progress._place_at_hub(shipment, hub)
-            shipment.last_scan_at = now - timedelta(hours=config.MAX_SCAN_GAP_HOURS + 1)
-            detail = f"stuck at {hub.id} with no scan"
+            detail = f"left behind at {hub.id}; {shipment.manifest_vehicle_id} drives on without it"
         else:
             raise ValueError(f"unknown misplacement type {kind}")
         db.commit()

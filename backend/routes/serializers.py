@@ -20,13 +20,20 @@ def shipment_dict(s) -> dict:
         "priority": s.priority, "handling_flags": s.handling_flags or [],
         "weight_kg": s.weight_kg, "volume_cbm": s.volume_cbm, "deadline": _iso(s.deadline),
         "current_lat": s.current_lat, "current_lng": s.current_lng,
-        "current_vehicle_id": s.current_vehicle_id, "last_scan_at": _iso(s.last_scan_at),
+        "current_vehicle_id": s.current_vehicle_id,
+        "manifest_vehicle_id": s.manifest_vehicle_id, "last_scan_at": _iso(s.last_scan_at),
         "misplacement_type": s.misplacement_type,
         "misplacement_detected_at": _iso(s.misplacement_detected_at),
         "recovery_strategy": s.recovery_strategy, "recovery_vehicle_id": s.recovery_vehicle_id,
         "recovery_score": s.recovery_score, "recovery_mode": s.recovery_mode,
         "created_at": _iso(s.created_at), "updated_at": _iso(s.updated_at),
     }
+
+
+def scan_dict(e) -> dict:
+    return {"id": e.id, "shipment_id": e.shipment_id, "event_type": e.event_type,
+            "hub_id": e.hub_id, "vehicle_id": e.vehicle_id, "expected": e.expected,
+            "note": e.note, "scanned_at": _iso(e.scanned_at)}
 
 
 def vehicle_dict(v, live: dict | None = None) -> dict:

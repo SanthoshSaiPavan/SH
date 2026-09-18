@@ -1,6 +1,6 @@
 """Configuration and tunable constants.
 
-Every threshold the plan names (geofence radius, time tolerance, score
+Every threshold the plan names (time tolerance, scan gap, score
 thresholds, ...) lives here so engines never hard-code magic numbers.
 Values marked ASSUMPTION are not given by the implementation plan and were
 chosen as reasonable demo defaults; tune them here.
@@ -26,7 +26,8 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma4:31b-cloud")
 OLLAMA_TIMEOUT_SECONDS = float(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
 
 # --- Module 1: anomaly detection ------------------------------------------
-GEOFENCE_THRESHOLD_KM = 50.0
+# Scan-based (level-up C1): excess / manifest mismatch / short scans, then these time checks.
+# The plan's parcel geofence was removed: a parcel has no GPS.
 TIME_TOLERANCE = 1.5
 MAX_SCAN_GAP_HOURS = 6.0
 AVG_TRANSIT_SPEED_KMH = 50.0  # ASSUMPTION: used for expected hub-to-hub transit time

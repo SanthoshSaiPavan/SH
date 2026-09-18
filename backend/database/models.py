@@ -1,7 +1,8 @@
 """ORM models mirroring the plan's schema.
 
 Additions beyond the plan (approved): vehicles.hazmat_certifications,
-vehicles.fleet_id, shipments.last_scan_at, and the users table.
+vehicles.fleet_id, shipments.last_scan_at, shipments.current_vehicle_id, the users table,
+and (level-up, scan-based detection) shipments.manifest_vehicle_id and the scan_events table.
 JSON-array columns use the JSON type instead of TEXT.
 """
 from datetime import datetime
@@ -19,7 +20,7 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from database.db import Base
 
@@ -32,6 +33,7 @@ STRATEGY_TYPES = ("piggyback", "reroute", "dedicated", "hold")
 RECOVERY_MODES = ("auto_executed", "pending_approval", "escalated")
 VEHICLE_STATUSES = ("idle", "loading", "in_transit", "at_hub", "completed")
 ACTION_STATUSES = ("proposed", "approved", "in_progress", "completed", "failed")
+SCAN_EVENT_TYPES = ("load", "unload", "hub_scan", "short", "excess")
 
 
 class Hub(Base):
@@ -109,6 +111,8 @@ class Shipment(Base):
     current_lng: Mapped[float | None] = mapped_column(Float)
     # Vehicle currently carrying the shipment (normal carriage, not recovery).
     current_vehicle_id: Mapped[str | None] = mapped_column(ForeignKey("vehicles.id"))
+    # Vehicle the shipment is manifested on for its current leg (what the paperwork says).
+    manifest_vehicle_id: Mapped[str | None] = mapped_column(ForeignKey("vehicles.id"))
     last_scan_at: Mapped[datetime | None] = mapped_column(DateTime)
     misplacement_type: Mapped[str | None] = mapped_column(String)
     misplacement_detected_at: Mapped[datetime | None] = mapped_column(DateTime)
@@ -120,6 +124,26 @@ class Shipment(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+    scans: Mapped[list["ScanEvent"]] = relationship(order_by="ScanEvent.scanned_at")
+
+
+class ScanEvent(Base):
+    """A barcode scan (or a missing one) at a hub or vehicle: Module 1's only parcel evidence.
+
+    'short' = manifested on a vehicle that reached the parcel's next hub without it;
+    'excess' = scanned at a hub that is not on its expected route.
+    """
+    __tablename__ = "scan_events"
+    __table_args__ = (Index("idx_scan_events_shipment_time", "shipment_id", "scanned_at"),)
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    shipment_id: Mapped[str] = mapped_column(ForeignKey("shipments.id"), nullable=False)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    hub_id: Mapped[str | None] = mapped_column(ForeignKey("hubs.id"))
+    vehicle_id: Mapped[str | None] = mapped_column(ForeignKey("vehicles.id"))
+    expected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    note: Mapped[str | None] = mapped_column(String)
+    scanned_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 
 class RecoveryAction(Base):
