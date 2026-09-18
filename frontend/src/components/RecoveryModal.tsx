@@ -8,6 +8,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useEngineNow } from '../hooks/useEngineNow'
 import { useSocket, useSocketEvent } from '../hooks/useSocket'
 import ScoreGauge, { ScoreBar } from './ScoreGauge'
+import { OnTime, ParetoBadge, ParetoStrip, RejectedPanel, ScanHistory, SensitivityLine } from './RecoveryInsights'
 
 type Props = { shipment: Shipment; onClose: () => void; onViewRoute: (hubs: string[]) => void }
 
@@ -93,9 +94,9 @@ export default function RecoveryModal({ shipment, onClose, onViewRoute }: Props)
     const res = await api.post('/api/agent/query', { question, shipment_id: shipment.id }, AnswerSchema)
     setAnswer(`${res.answer}${res.source === 'template' ? ' (LLM unavailable: grounded template)' : ''}`)
   }
-  const runWhatIf = async (type: string) => {
-    const res = await api.post('/api/agent/what-if', { shipment_id: shipment.id, hypothetical_strategy: type }, WhatIfSchema)
-    setWhatIf((w) => ({ ...w, [type]: res }))
+  const runWhatIf = async (s: Strategy) => {
+    const res = await api.post('/api/agent/what-if', { shipment_id: shipment.id, hypothetical_strategy: s.type }, WhatIfSchema)
+    setWhatIf((w) => ({ ...w, [s.id]: res }))
   }
   const loadAudit = async () => setAudit(await api.get(`/api/agent/audit-trail/${shipment.id}`, AuditSchema))
 
@@ -116,6 +117,7 @@ export default function RecoveryModal({ shipment, onClose, onViewRoute }: Props)
               <span>{shipment.weight_kg} kg · {shipment.volume_cbm} m³</span>
               {shipment.misplacement_type && <span className="text-warning">{title(shipment.misplacement_type)} {shipment.current_hub_id ? `at ${shipment.current_hub_id}` : `en route${shipment.current_vehicle_id ? ` on ${shipment.current_vehicle_id}` : ''}`}</span>}
               <span>→ {shipment.destination_hub_id}</span>
+              {shipment.manifest_vehicle_id && <span>Manifest: <b className="mono text-ink">{shipment.manifest_vehicle_id}</b></span>}
             </div>
           </div>
           {ev && <span className={`ml-auto text-xs font-semibold px-3 py-1 rounded-full ${MODE_BADGE[ev.recovery_mode] ?? ''}`}>{title(ev.recovery_mode)}</span>}
@@ -128,11 +130,14 @@ export default function RecoveryModal({ shipment, onClose, onViewRoute }: Props)
 
         {ev && (
           <>
+            <ParetoStrip ev={ev} />
+            <SensitivityLine ev={ev} />
+            <RejectedPanel ev={ev} shipmentId={shipment.id} />
             <div className="mt-5 space-y-3">
               {ev.strategies.map((s) => (
-                <StrategyRow key={s.id} s={s} ev={ev} recommended={s.id === recommendedId}
+                <StrategyRow key={s.id} s={s} ev={ev} shipment={shipment} recommended={s.id === recommendedId}
                   canApprove={isOperator && !busy} onApprove={() => approve(s)}
-                  onView={() => onViewRoute(s.hubs)} onWhatIf={() => runWhatIf(s.type)} whatIf={whatIf[s.type]} />
+                  onView={() => onViewRoute(s.hubs)} onWhatIf={() => runWhatIf(s)} whatIf={whatIf[s.id]} />
               ))}
             </div>
 
@@ -209,6 +214,7 @@ export default function RecoveryModal({ shipment, onClose, onViewRoute }: Props)
                   ))}
                 </div>
               </div>
+              <ScanHistory shipmentId={shipment.id} />
             </div>
           </>
         )}
@@ -218,12 +224,16 @@ export default function RecoveryModal({ shipment, onClose, onViewRoute }: Props)
 }
 
 type RowProps = {
-  s: Strategy; ev: Evaluation; recommended: boolean; canApprove: boolean
+  s: Strategy; ev: Evaluation; shipment: Shipment; recommended: boolean; canApprove: boolean
   onApprove: () => void; onView: () => void; onWhatIf: () => void; whatIf?: z.infer<typeof WhatIfSchema>
 }
 
-function StrategyRow({ s, ev, recommended, canApprove, onApprove, onView, onWhatIf, whatIf }: RowProps) {
+// `time` is now the Monte Carlo on-time probability, not a time score.
+const SCORE_LABEL: Record<string, string> = { time: 'On-time P' }
+
+function StrategyRow({ s, ev, shipment, recommended, canApprove, onApprove, onView, onWhatIf, whatIf }: RowProps) {
   const meta = STRATEGY_META[s.type]
+  const dominated = s.feasible && !s.pareto && ev.pareto_options.length > 0
   const saving = ev.dedicated_cost > 0 ? 1 - s.cost / ev.dedicated_cost : 0
   const deadline = !s.feasible ? '—' : s.deadline_met ? (s.buffer_hours < 2 ? '⚠️ Tight' : '✅ Safe') : '🔴 WILL MISS'
   const d = s.details as Record<string, unknown>
@@ -237,7 +247,14 @@ function StrategyRow({ s, ev, recommended, canApprove, onApprove, onView, onWhat
             <span style={{ color: meta.color }}>{meta.icon} {meta.label.toUpperCase()}</span>
             {s.vehicle_id && <span className="mono text-sm">onto {s.vehicle_id}</span>}
             {s.type === 'reroute' && s.hubs.length > 2 && <span className="text-sm text-muted">via {s.hubs.slice(1, -1).join(', ')}</span>}
+            <ParetoBadge label={s.pareto_label} />
+            {dominated && <span className="text-[11px] text-muted font-normal">dominated (another option is no costlier and no slower)</span>}
           </div>
+          {s.feasible && (
+            <div className="text-xs text-muted mt-1">
+              <OnTime p={s.on_time_probability} threshold={ev.ontime_threshold[shipment.priority]} priority={shipment.priority} />
+            </div>
+          )}
           {!s.feasible ? (
             <div className="text-sm text-muted mt-1">Not feasible: {String(d.reason ?? '')}</div>
           ) : (
@@ -265,7 +282,7 @@ function StrategyRow({ s, ev, recommended, canApprove, onApprove, onView, onWhat
         <div className="mt-3 grid grid-cols-4 gap-3 text-[11px]">
           {Object.entries(s.scores).map(([k, v]) => (
             <div key={k}>
-              <div className="flex justify-between text-muted"><span>{title(k)} <span className="opacity-60">×{ev.weights[k] ?? '?'}</span></span><span className="mono">{v.toFixed(2)}</span></div>
+              <div className="flex justify-between text-muted"><span>{SCORE_LABEL[k] ?? title(k)} <span className="opacity-60">×{ev.weights[k] ?? '?'}</span></span><span className="mono">{v.toFixed(2)}</span></div>
               <ScoreBar value={v} color={meta.color} />
             </div>
           ))}

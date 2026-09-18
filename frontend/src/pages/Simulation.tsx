@@ -88,7 +88,7 @@ export default function Simulation() {
 
       <div className="card p-4">
         <h3 className="font-semibold mb-1">Vehicles</h3>
-        <p className="text-xs text-muted mb-3">Slow a truck down or reroute it to a different next stop to see the recommendation switch (e.g. send TRUCK-102 to Vizag).</p>
+        <p className="text-xs text-muted mb-3">Slow a truck down or reroute it to a different next stop to see the recommendation switch (e.g. reroute TRUCK-104, the current pick for SHP-501).</p>
         <table className="w-full text-sm">
           <thead className="text-xs text-muted text-left"><tr><th className="py-1">Vehicle</th><th>Status</th><th>Route (next ▸)</th><th>Load</th><th>Speed km/h</th><th>New next stop</th><th /></tr></thead>
           <tbody>

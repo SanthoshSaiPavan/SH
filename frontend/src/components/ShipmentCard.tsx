@@ -1,5 +1,5 @@
 import { PRIORITY_META, STATUS_COLORS } from '../lib/constants'
-import { parseUtc, timeLeft, title } from '../lib/format'
+import { parseUtc, pct, timeLeft, title } from '../lib/format'
 import type { Recommendation, Shipment } from '../lib/schemas'
 import type { Progress } from '../hooks/useLiveData'
 
@@ -26,6 +26,7 @@ export default function ShipmentCard({ shipment: s, recommendation, progress, no
       {recommendation && (
         <div className="text-xs mt-2 text-piggy">
           ★ {title(recommendation.strategy)}{recommendation.vehicle_id ? ` → ${recommendation.vehicle_id}` : ''} · {recommendation.score.toFixed(0)}/100
+          {typeof recommendation.on_time_probability === 'number' && ` · P(on-time) ${pct(recommendation.on_time_probability)}`}
           {recommendation.recovery_mode === 'escalated' && <span className="text-danger"> · escalated</span>}
         </div>
       )}

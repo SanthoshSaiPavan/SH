@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { z } from 'zod'
 import { api } from '../lib/api'
+import { pct } from '../lib/format'
 import {
   ActionSchema, AlertSchema, DashboardSchema, HubSchema, LiveStateSchema, RecommendationSchema,
   ShipmentSchema, SimStatusSchema, VehicleSchema,
@@ -163,7 +164,8 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     if (!rec.success) return
     setRecommendations((r) => ({ ...r, [rec.data.shipment_id]: rec.data }))
     if (rec.data.reason && rec.data.reason !== 'initial recommendation') {
-      toast('info', `${rec.data.shipment_id}: ${rec.data.reason}`)
+      const p = rec.data.on_time_probability
+      toast('info', `${rec.data.shipment_id}: ${rec.data.reason}${typeof p === 'number' ? ` (P(on-time) ${pct(p)})` : ''}`)
     }
   })
 
