@@ -99,7 +99,7 @@ export default function LiveMap({ hubs, vehicles, shipments, routes = [], showPl
     Object.values(hubs).forEach((h) => {
       if (hubMarkers.current.has(h.id)) return
       const el = document.createElement('div')
-      el.innerHTML = `<div style="display:flex;align-items:center;gap:4px"><span style="font-size:16px;line-height:1;filter:drop-shadow(0 0 4px #64ffda)">🏢</span><span style="font:600 10px Inter;color:#cfd8f5;text-shadow:0 0 3px #000">${h.city}</span></div>`
+      el.innerHTML = `<div style="display:flex;align-items:center;gap:4px"><span style="font-size:16px;line-height:1">🏢</span><span style="font:600 10px Inter;color:#cfd8f5;text-shadow:0 0 3px #000">${h.city}</span></div>`
       const marker = new maplibregl.Marker({ element: el, anchor: 'left', offset: [-9, 0] })
         .setLngLat([h.lng, h.lat])
         .setPopup(new maplibregl.Popup({ offset: 10 }).setHTML(`<b>${h.name}</b><br/>${h.id} · ${h.hub_type}<br/>Capacity ${h.capacity_packages}`))
