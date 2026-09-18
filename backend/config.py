@@ -100,6 +100,28 @@ RELIABILITY_PRIOR_WEIGHT = 10  # pseudo-observations blending prior with history
 AUTO_EXECUTE_THRESHOLD = 85.0
 LOW_CONFIDENCE_THRESHOLD = 50.0
 
+# --- Level-up: P(on-time) Monte Carlo (report §5.5) ---------------------------
+# The Module 3 time component is P(arrive by deadline) from ONTIME_SAMPLES draws.
+ONTIME_SAMPLES = 200  # ASSUMPTION (report suggests "about 200")
+TRAVEL_TIME_MEDIAN_FACTOR = 1.05  # ASSUMPTION: median trip runs 5% over plan (traffic)
+TRAVEL_TIME_SIGMA = 0.15  # ASSUMPTION: lognormal sigma of the per-leg travel-time multiplier
+DWELL_DELAY_MEAN_MINUTES = 15.0  # ASSUMPTION: extra dwell per stop, exponential
+DEDICATED_DISPATCH_RANGE_HOURS = (0.5, 2.0)  # ASSUMPTION: uniform; nominal DEDICATED_DISPATCH_HOURS
+REROUTE_BOOKING_RANGE_HOURS = (1.0, 4.0)  # ASSUMPTION: uniform; nominal REROUTE_BOOKING_HOURS
+# Minimum P(on-time) per tier; auto-execution also requires the top strategy to meet it.
+ONTIME_THRESHOLD = {"critical": 0.95, "high": 0.90, "medium": 0.80, "low": 0.70}  # ASSUMPTION
+
+# --- Level-up: Pareto options and weight sensitivity (report C4 / §5.4) -------
+# The recommendation is the best-scoring option on the cost × arrival-time Pareto front;
+# weights only rank within the front. Sensitivity re-ranks with each weight moved ±20%.
+SENSITIVITY_STEP = 0.20
+
+# --- Level-up: joint assignment of misplaced shipments (report C3 / K4) ----------
+# Each cycle all misplaced shipments are assigned together (scipy milp) so no vehicle is
+# oversubscribed. Objective per option = PRIORITY_MULTIPLIER × (score
+#   + PARETO_BONUS if on the shipment's Pareto front + SWITCH_MARGIN if it is the current pick).
+PARETO_BONUS = 100.0  # ASSUMPTION: Pareto options are preferred unless capacity forces otherwise
+
 # --- Module 5: simulation -----------------------------------------------------
 SIM_TICK_SECONDS = 2.0
 SIM_MINUTES_PER_TICK = 2.0  # ASSUMPTION: at 1x, each 2 s tick advances the sim clock 2 min

@@ -42,6 +42,12 @@ class Strategy:
     details: dict = field(default_factory=dict)
     scores: dict = field(default_factory=dict)
     score: float = 0.0
+    # Vehicles whose capacity this strategy consumes (piggyback: every leg's vehicle;
+    # hold: its vehicle; reroute/dedicated: none). Used by the joint assignment.
+    vehicles: list = field(default_factory=list)
+    on_time_probability: float = 0.0  # Monte Carlo P(arrival <= deadline)
+    pareto: bool = False  # on this shipment's cost × arrival-time Pareto front
+    pareto_label: str | None = None  # 'fastest' | 'cheapest' | 'balanced' | None
 
     def to_dict(self) -> dict:
         legs = [{**leg, "departure_time": leg["departure_time"].isoformat(),
@@ -55,7 +61,9 @@ class Strategy:
             "vehicle_id": self.vehicle_id, "hubs": self.hubs, "legs": legs,
             "deadline_met": self.deadline_met, "buffer_hours": round(self.buffer_hours, 2),
             "details": self.details, "scores": {k: round(v, 3) for k, v in self.scores.items()},
-            "score": self.score,
+            "score": self.score, "vehicles": self.vehicles,
+            "on_time_probability": round(self.on_time_probability, 3),
+            "pareto": self.pareto, "pareto_label": self.pareto_label,
         }
 
 
@@ -68,6 +76,13 @@ class Evaluation:
     dedicated_cost: float
     evaluated_at: datetime
     weights: dict = field(default_factory=dict)
+    # [{strategy_id, label, cost, arrival_time (iso), on_time_probability, tradeoff}]
+    pareto_options: list = field(default_factory=list)
+    # Detours the no-harm rule refused for this shipment's pickup hub:
+    # [{vehicle_id, detour_hub, detour_km, reason, victims: [{shipment_id, priority, late_hours}]}]
+    rejected_options: list = field(default_factory=list)
+    # {stable: bool, step: float, checks: [{component, change, recommended_id}]}
+    sensitivity: dict = field(default_factory=dict)
 
     @property
     def best(self) -> Strategy | None:
@@ -87,6 +102,10 @@ class Evaluation:
             "evaluated_at": self.evaluated_at.isoformat(),
             "weights": self.weights,
             "piggyback_weights": config.PIGGYBACK_WEIGHTS,
+            "pareto_options": self.pareto_options,
+            "rejected_options": self.rejected_options,
+            "sensitivity": self.sensitivity,
+            "ontime_threshold": config.ONTIME_THRESHOLD,
         }
 
 

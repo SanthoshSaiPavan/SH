@@ -47,6 +47,9 @@ ROUTES = [
     ("RT-07", "Mumbai-Pune Shuttle", ["HUB-MUM-01", "HUB-PUN-01"], 150, 3, 20),
     ("RT-08", "Central India Cross", ["HUB-NAG-01", "HUB-BHO-01", "HUB-AHM-01", "HUB-MUM-01"], 1100, 18, 15),
     ("RT-09", "Hyderabad-Warangal-Vijayawada", ["HUB-HYD-01", "HUB-WGL-01", "HUB-VJA-01"], 360, 7, 14),
+    # Added (approved) for the no-harm demo: the NAG→VJA road runs through Warangal, so
+    # TRUCK-102 can only take SHP-501 by stopping there. Distance is the cached OSRM road km.
+    ("RT-10", "Nagpur-Vijayawada Express", ["HUB-NAG-01", "HUB-VJA-01"], 669, 12, 14),
 ]
 
 VEHICLE_SPECS = {  # type: (kg, cbm, speed)
@@ -72,14 +75,16 @@ NATIONAL_VEHICLES = [
     ("VEH-TRK-0012", "truck", "RT-08", False, 1, 0.2, 0.45, []),
 ]
 
-# Module 7 demo trucks on RT-09. TRUCK-102 approaches Warangal with 35% free
-# capacity (the first recommendation); TRUCK-104 follows as the fallback.
-DEMO_TRUCKS = [
-    ("TRUCK-101", False, 2, 0.35, 0.60),
-    ("TRUCK-102", False, 1, 0.45, 0.65),
-    ("TRUCK-103", True, 1, 0.50, 0.50),
-    ("TRUCK-104", False, 1, 0.10, 0.40),
+# Module 7 demo trucks. TRUCK-102 (RT-10, Nagpur → Vijayawada) is ~67 km short of Warangal
+# with 35% free capacity: the fastest pickup for SHP-501, but the Warangal stop would make
+# SHP-311 (critical, aboard) late, so the no-harm rule rejects it. TRUCK-104 (RT-09) is the pick.
+DEMO_TRUCKS = [  # (id, route, reversed, stop_index, progress, used fraction)
+    ("TRUCK-101", "RT-09", False, 2, 0.35, 0.60),
+    ("TRUCK-102", "RT-10", False, 1, 0.55, 0.65),
+    ("TRUCK-103", "RT-09", True, 1, 0.50, 0.50),
+    ("TRUCK-104", "RT-09", False, 1, 0.10, 0.40),
 ]
+SHP_311_DEADLINE_SLACK_HOURS = 0.2  # SHP-311 is due this long after TRUCK-102's planned VJA arrival
 
 USERS = [  # username, password, role, vehicle_id
     ("admin", "admin123", "ADMIN", None),
@@ -149,8 +154,8 @@ def build_seed():
 
     for vid, vtype, rid, rev, idx, prog, used, hazmat in NATIONAL_VEHICLES:
         make_vehicle(vid, vtype, rid, rev, idx, prog, used, hazmat, rng.choice(CARRIERS))
-    for vid, rev, idx, prog, used in DEMO_TRUCKS:
-        make_vehicle(vid, "truck", "RT-09", rev, idx, prog, used, [], "Deccan Roadways")
+    for vid, rid, rev, idx, prog, used in DEMO_TRUCKS:
+        make_vehicle(vid, "truck", rid, rev, idx, prog, used, [], "Deccan Roadways")
     vehicles["TRUCK-102"].speed_kmh = 60
 
     shipments = _build_shipments(rng, now, hubs, vehicles)
@@ -190,7 +195,7 @@ def carried_shipment(rng, now, hubs, v, origin_idx: int, shipment_id: str, track
 
 
 def _build_shipments(rng, now, hubs, vehicles):
-    """30 in-transit shipments riding national vehicles, plus scripted SHP-501."""
+    """30 in-transit shipments riding national vehicles, plus scripted SHP-501 and SHP-311."""
     priorities = list(PRIORITY_MIX)
     rng.shuffle(priorities)
     carriers = [v for v in vehicles.values() if not v.id.startswith("TRUCK-")]
@@ -211,6 +216,20 @@ def _build_shipments(rng, now, hubs, vehicles):
         status="in_transit", priority="high", handling_flags=[], weight_kg=120, volume_cbm=0.6,
         deadline=now + timedelta(hours=10), current_lat=wgl.lat, current_lng=wgl.lng,
         current_vehicle_id=None, last_scan_at=now - timedelta(minutes=20),
+    ))
+
+    t102 = vehicles["TRUCK-102"]
+    vja = hubs["HUB-VJA-01"]
+    eta_vja = roads.km_to_hub("HUB-NAG-01", vja, t102.current_lat, t102.current_lng) / t102.speed_kmh
+    shipments.append(Shipment(
+        id="SHP-311", tracking_number="PGS-DEMO-311", origin_hub_id="HUB-NAG-01",
+        destination_hub_id="HUB-VJA-01", current_hub_id=None,
+        expected_route=["HUB-NAG-01", "HUB-VJA-01"], actual_route=["HUB-NAG-01"],
+        status="in_transit", priority="critical", handling_flags=[], weight_kg=250,
+        volume_cbm=1.2,
+        deadline=now + timedelta(hours=eta_vja + SHP_311_DEADLINE_SLACK_HOURS),
+        current_lat=t102.current_lat, current_lng=t102.current_lng, current_vehicle_id="TRUCK-102",
+        last_scan_at=now - timedelta(hours=_hours_since_departure(hubs, t102)),
     ))
     return shipments
 
