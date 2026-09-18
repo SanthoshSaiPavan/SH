@@ -43,9 +43,19 @@ export const ShipmentSchema = z.object({
   current_vehicle_id: z.string().nullable(), misplacement_type: z.string().nullable(),
   misplacement_detected_at: z.string().nullable(), recovery_strategy: z.string().nullable(),
   recovery_vehicle_id: z.string().nullable(), recovery_score: z.number().nullable(),
-  recovery_mode: z.string().nullable(),
+  recovery_mode: z.string().nullable(), manifest_vehicle_id: z.string().nullable().optional(),
 }).loose()
 export type Shipment = z.infer<typeof ShipmentSchema>
+
+export const ScanEventTypeSchema = z.enum(['load', 'unload', 'hub_scan', 'short', 'excess'])
+export type ScanEventType = z.infer<typeof ScanEventTypeSchema>
+
+export const ScanEventSchema = z.object({
+  id: z.string(), shipment_id: z.string(), event_type: ScanEventTypeSchema,
+  hub_id: z.string().nullable(), vehicle_id: z.string().nullable(),
+  expected: z.boolean(), note: z.string().nullable(), scanned_at: z.string(),
+})
+export type ScanEvent = z.infer<typeof ScanEventSchema>
 
 export const LegSchema = z.object({
   vehicle_id: z.string(), from_hub: z.string(), to_hub: z.string(),
@@ -54,6 +64,9 @@ export const LegSchema = z.object({
 }).loose()
 export type Leg = z.infer<typeof LegSchema>
 
+export const ParetoLabelSchema = z.enum(['fastest', 'cheapest', 'balanced'])
+export type ParetoLabel = z.infer<typeof ParetoLabelSchema>
+
 export const StrategySchema = z.object({
   id: z.string(), type: StrategyTypeSchema, feasible: z.boolean(), cost: z.number(),
   arrival_time: z.string().nullable(), duration_hours: z.number(), distance_km: z.number(),
@@ -61,6 +74,10 @@ export const StrategySchema = z.object({
   legs: z.array(LegSchema), deadline_met: z.boolean(), buffer_hours: z.number(),
   details: z.record(z.string(), z.unknown()), scores: z.record(z.string(), z.number()),
   score: z.number(),
+  vehicles: z.array(z.string()).default([]),
+  on_time_probability: z.number().nullable().default(null),
+  pareto: z.boolean().default(false),
+  pareto_label: ParetoLabelSchema.nullable().default(null),
 })
 export type Strategy = z.infer<typeof StrategySchema>
 
@@ -73,12 +90,36 @@ export const CandidateSchema = z.object({
 }).loose()
 export type Candidate = z.infer<typeof CandidateSchema>
 
+export const ParetoOptionSchema = z.object({
+  strategy_id: z.string(), label: ParetoLabelSchema.nullable(), cost: z.number(),
+  arrival_time: z.string().nullable(), on_time_probability: z.number(), tradeoff: z.string(),
+})
+export type ParetoOption = z.infer<typeof ParetoOptionSchema>
+
+/** A detour the no-harm rule refused: stopping for this shipment would make cargo aboard late. */
+export const RejectedOptionSchema = z.object({
+  vehicle_id: z.string(), detour_hub: z.string(), detour_km: z.number(), reason: z.string(),
+  victims: z.array(z.object({ shipment_id: z.string(), priority: PrioritySchema, late_hours: z.number() })),
+})
+export type RejectedOption = z.infer<typeof RejectedOptionSchema>
+
+// The backend sends {} when sensitivity was not computed.
+export const SensitivitySchema = z.object({
+  stable: z.boolean(), step: z.number(),
+  checks: z.array(z.object({ component: z.string(), change: z.number(), recommended_id: z.string().nullable() })),
+}).partial()
+export type Sensitivity = z.infer<typeof SensitivitySchema>
+
 export const EvaluationSchema = z.object({
   shipment_id: z.string(), recovery_mode: z.string(), recommended: StrategySchema.nullable(),
   recommendation_reason: z.string().nullable().optional(),
   strategies: z.array(StrategySchema), piggyback_candidates: z.array(CandidateSchema),
   dedicated_cost: z.number(), evaluated_at: z.string(),
   weights: z.record(z.string(), z.number()), piggyback_weights: z.record(z.string(), z.number()),
+  pareto_options: z.array(ParetoOptionSchema).default([]),
+  rejected_options: z.array(RejectedOptionSchema).default([]),
+  sensitivity: SensitivitySchema.nullable().default(null),
+  ontime_threshold: z.partialRecord(PrioritySchema, z.number()).default({}),
 })
 export type Evaluation = z.infer<typeof EvaluationSchema>
 
@@ -88,6 +129,7 @@ export const RecommendationSchema = z.object({
   delivery_eta: z.string().nullable(), available_capacity: z.number().nullable().optional(),
   recovery_cost: z.number(), cost_saving: z.number(), recovery_mode: z.string(),
   deadline_met: z.boolean(), reason: z.string().nullable(),
+  on_time_probability: z.number().nullable().optional(), pareto_label: ParetoLabelSchema.nullable().optional(),
 })
 export type Recommendation = z.infer<typeof RecommendationSchema>
 

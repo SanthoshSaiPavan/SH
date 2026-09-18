@@ -100,6 +100,7 @@ function OpportunityBanner({ rec, onOpen }: { rec: Recommendation; onOpen: () =>
         <span>Free capacity<br /><b className="text-ink">{rec.available_capacity !== null && rec.available_capacity !== undefined ? `${Math.round(rec.available_capacity)} kg` : '—'}</b></span>
         <span>Recovery cost<br /><b className="text-ink">{inr(rec.recovery_cost)}</b></span>
         <span>Saving vs dedicated<br /><b className="text-success">{inr(rec.cost_saving)}</b></span>
+        <span>P(on-time)<br /><b className="text-ink">{pct(rec.on_time_probability)}</b></span>
       </div>
     </button>
   )
