@@ -1,10 +1,17 @@
 """MODULE 3: Recovery strategy generation, scoring, and autonomy rule.
 
-All four strategies are scored with the same tier-weighted formula so they
+Strategies: one "piggyback:<vehicle>" per Module 2 candidate, plus reroute,
+dedicated and hold. All are scored with the same tier-weighted formula so they
 are comparable:
     score = Σ tier_weight[k] × component[k]  (k = cost, time, capacity, reliability)
-The priority tier shifts the weights (config.STRATEGY_WEIGHTS) instead of the
-plan's additive `0.20 × priority_multiplier`, which could not change ranking.
+The time component is P(on-time) (engines.on_time). The priority tier shifts the
+weights (config.STRATEGY_WEIGHTS) instead of the plan's additive
+`0.20 × priority_multiplier`, which could not change ranking.
+
+Weights only rank within the cost × arrival-time Pareto front: strategies are
+ordered by (feasible, on the front, score), so the recommendation is never an
+option another one beats on both cost and arrival. `sensitivity` re-ranks the
+front with each weight moved ±SENSITIVITY_STEP.
 """
 from __future__ import annotations
 
@@ -20,6 +27,7 @@ import config
 from database.models import RecoveryAction, Shipment, Vehicle
 from engines import graph_network as gn
 from engines import piggyback_matcher as pm
+from engines.on_time import on_time_probability
 from utils import clock
 from utils.scoring import clamp01, weighted_score
 
@@ -123,27 +131,30 @@ def _start_hub(shipment, hubs):
     return gn.nearest_hub(hubs, shipment.current_lat, shipment.current_lng)
 
 
-def piggyback_strategy(shipment, candidates, now) -> Strategy:
+def piggyback_strategies(shipment, candidates, now) -> list[Strategy]:
+    """One strategy per piggyback candidate (id "piggyback:<first vehicle>")."""
     if not candidates:
-        return Strategy(id="piggyback", type="piggyback", feasible=False,
-                        details={"reason": "No vehicle with a feasible path and spare capacity"})
-    top = candidates[0]
-    return _timed(Strategy(
-        id="piggyback", type="piggyback", feasible=True, cost=top.cost,
-        arrival_time=top.arrival_time, distance_km=top.distance_km, detour_km=top.detour_km,
-        vehicle_id=top.vehicle_id, hubs=top.hubs, legs=top.legs,
-        details={"piggyback_match_score": top.score, "match_scores": top.scores,
-                 "pickup_time": top.pickup_time.isoformat() if top.pickup_time else None,
-                 "available_capacity_kg": top.available_capacity_kg,
-                 "transfers": top.transfers, "vehicles": top.vehicles},
-    ), shipment, now)
+        return [Strategy(id="piggyback", type="piggyback", feasible=False,
+                         details={"reason": "No vehicle with a feasible path and spare capacity"})]
+    return [_timed(Strategy(
+        id=f"piggyback:{c.vehicle_id}", type="piggyback", feasible=True, cost=c.cost,
+        arrival_time=c.arrival_time, distance_km=c.distance_km, detour_km=c.detour_km,
+        vehicle_id=c.vehicle_id, hubs=c.hubs, legs=c.legs, vehicles=list(c.vehicles),
+        details={"piggyback_match_score": c.score, "match_scores": c.scores,
+                 "pickup_time": c.pickup_time.isoformat() if c.pickup_time else None,
+                 "available_capacity_kg": c.available_capacity_kg,
+                 "transfers": c.transfers, "vehicles": c.vehicles},
+    ), shipment, now) for c in candidates]
 
 
 def hold_strategy(shipment, graph, now) -> Strategy:
-    """Wait at the current (or nearest) hub for the next vehicle going straight to destination."""
+    """Wait at the current (or nearest) hub for the next vehicle going straight to destination.
+
+    Only planned schedules count: every detour chain is excluded.
+    """
     with_entry = gn.add_shipment_entry_node(graph, shipment, now)
     no_detours = nx.subgraph_view(with_entry, filter_edge=lambda u, v: (
-        with_entry.edges[u, v].get("detour_km", 0.0) == 0.0
+        not with_entry.edges[u, v].get("detour", False)
         and gn.edge_allowed_by_capacity(shipment, with_entry.edges[u, v])
         and gn.edge_allowed_by_handling(shipment, with_entry.edges[u, v])))
     paths = gn.find_candidate_paths(no_detours, with_entry.graph["entry"],
@@ -158,7 +169,7 @@ def hold_strategy(shipment, graph, now) -> Strategy:
     return _timed(Strategy(
         id="hold", type="hold", feasible=True, cost=nxt["cost"], arrival_time=nxt["arrival_time"],
         distance_km=nxt["distance_km"], vehicle_id=first["vehicle_id"], hubs=nxt["hubs"],
-        legs=nxt["legs"],
+        legs=nxt["legs"], vehicles=[first["vehicle_id"]],
         details={"hold_hub": first["from_hub"], "wait_hours": round(nxt["first_hop_wait_hours"], 2),
                  "next_vehicle_departure": first["departure_time"].isoformat()},
     ), shipment, now)
@@ -219,47 +230,143 @@ def strategy_reliability(db: Session | None) -> dict:
 
 def score_strategy(strategy: Strategy, shipment, baseline_cost: float, now: datetime,
                    reliability: dict) -> float:
+    strategy.on_time_probability = on_time_probability(strategy, shipment, now)
     if not strategy.feasible:
         strategy.scores, strategy.score = {}, 0.0
         return 0.0
-    window_h = max((shipment.deadline - now).total_seconds() / 3600, 1e-6)
     ceiling = max(baseline_cost * config.COST_CEILING_FACTOR, 1e-6)
     strategy.scores = {
         "cost": clamp01(1 - strategy.cost / ceiling),
-        "time": clamp01(strategy.buffer_hours / window_h) if strategy.deadline_met else 0.0,
+        "time": strategy.on_time_probability,
         "capacity": config.CAPACITY_EFFICIENCY[strategy.type],
         "reliability": reliability.get(strategy.type, 0.8),
     }
-    weights = config.STRATEGY_WEIGHTS.get(shipment.priority, config.STRATEGY_WEIGHTS["medium"])
-    strategy.score = weighted_score(strategy.scores, weights)
+    strategy.score = weighted_score(strategy.scores, tier_weights(shipment))
     return strategy.score
 
 
+def tier_weights(shipment) -> dict:
+    return config.STRATEGY_WEIGHTS.get(shipment.priority, config.STRATEGY_WEIGHTS["medium"])
+
+
+def _rank_key(s: Strategy):
+    return (s.feasible, s.pareto, s.score)
+
+
 def compare_strategies(strategies: list[Strategy]) -> Strategy | None:
-    ranked = sorted(strategies, key=lambda s: (s.feasible, s.score), reverse=True)
+    ranked = sorted(strategies, key=_rank_key, reverse=True)
     return ranked[0] if ranked else None
 
 
+def mark_pareto(strategies: list[Strategy]) -> list[Strategy]:
+    """Flag the feasible strategies no other one beats on both cost and arrival; label them."""
+    options = [s for s in strategies if s.feasible and s.arrival_time is not None]
+    for s in strategies:
+        s.pareto, s.pareto_label = False, None
+    front = [s for s in options if not any(
+        o.cost <= s.cost and o.arrival_time <= s.arrival_time
+        and (o.cost < s.cost or o.arrival_time < s.arrival_time) for o in options)]
+    for s in front:
+        s.pareto = True
+    if not front:
+        return front
+    cheapest = min(front, key=lambda s: (s.cost, s.arrival_time, -s.score))
+    cheapest.pareto_label = "cheapest"
+    fastest = min(front, key=lambda s: (s.arrival_time, s.cost, -s.score))
+    if fastest is not cheapest:
+        fastest.pareto_label = "fastest"
+    rest = [s for s in front if s.pareto_label is None]
+    if rest:
+        max(rest, key=lambda s: s.score).pareto_label = "balanced"
+    return front
+
+
+def _money(value: float) -> str:
+    return f"₹{value:,.0f}"
+
+
+def pareto_options(front: list[Strategy]) -> list[dict]:
+    """Front members, cheapest first, with the trade-off against the cheapest written out."""
+    if not front:
+        return []
+    ordered = sorted(front, key=lambda s: (s.cost, s.arrival_time))
+    base = ordered[0]
+    out = []
+    for s in ordered:
+        extra = s.cost - base.cost
+        saved_h = (base.arrival_time - s.arrival_time).total_seconds() / 3600
+        if s is base:
+            tradeoff = "cheapest option"
+        elif round(extra) == 0 and round(saved_h, 1) == 0:
+            tradeoff = "same cost and arrival as cheapest"
+        else:
+            tradeoff = f"+{_money(extra)} buys {saved_h:.1f} h vs cheapest"
+        out.append({"strategy_id": s.id, "label": s.pareto_label, "cost": round(s.cost, 2),
+                    "arrival_time": s.arrival_time.isoformat(),
+                    "on_time_probability": round(s.on_time_probability, 3), "tradeoff": tradeoff})
+    return out
+
+
+def rejected_options(shipment, graph) -> list[dict]:
+    """No-harm rejections for detours to this shipment's pickup hub that reach its destination."""
+    start = _start_hub(shipment, graph.graph["hubs"]).id
+    out, seen = [], set()
+    for r in graph.graph.get("rejected_detours", ()):
+        key = (r["vehicle_id"], r["detour_hub"])
+        if r["detour_hub"] != start or shipment.destination_hub_id not in r.get("continues_to", ()) \
+                or key in seen:
+            continue
+        seen.add(key)
+        victims = ", ".join(f"{v['shipment_id']} ({v['priority']}) {v['late_hours']:.2f} h late"
+                            for v in r["victims"])
+        out.append({"vehicle_id": r["vehicle_id"], "detour_hub": r["detour_hub"],
+                    "detour_km": r["detour_km"], "victims": r["victims"],
+                    "reason": f"Detour to {r['detour_hub']} makes {victims}"})
+    return out
+
+
+def sensitivity(strategies: list[Strategy], weights: dict, best: Strategy | None) -> dict:
+    """Recommendation with each tier weight moved ±SENSITIVITY_STEP (renormalised)."""
+    step = config.SENSITIVITY_STEP
+    pool = [s for s in strategies if s.pareto]  # already in rank order
+    checks = []
+    for component in weights:
+        for change in (step, -step):
+            w = dict(weights)
+            w[component] *= 1 + change
+            total = sum(w.values())
+            w = {k: v / total for k, v in w.items()}
+            pick = max(pool, key=lambda s: weighted_score(s.scores, w)) if pool else None
+            checks.append({"component": component, "change": change,
+                           "recommended_id": pick.id if pick else None})
+    best_id = best.id if best and best.feasible else None
+    return {"stable": all(c["recommended_id"] == best_id for c in checks), "step": step,
+            "checks": checks}
+
+
 def determine_recovery_mode(shipment, ranked: list[Strategy]) -> str:
-    """'auto_executed' | 'pending_approval' | 'escalated' (confidence-threshold rule)."""
+    """'auto_executed' | 'pending_approval' | 'escalated' (confidence-threshold rule).
+
+    Auto-execution also needs the top strategy's P(on-time) to meet the tier threshold.
+    """
     top = ranked[0] if ranked else None
     has_alternative = any(s.feasible for s in ranked if s.type in ("piggyback", "reroute"))
     if top is None or not top.feasible or not has_alternative \
             or top.score < config.LOW_CONFIDENCE_THRESHOLD:
         return "escalated"
-    if shipment.priority == "critical" and top.score > config.AUTO_EXECUTE_THRESHOLD:
+    if shipment.priority == "critical" and top.score > config.AUTO_EXECUTE_THRESHOLD \
+            and top.on_time_probability >= config.ONTIME_THRESHOLD[shipment.priority]:
         return "auto_executed"
     return "pending_approval"
 
 
 def generate_recovery_strategies(shipment, piggyback_candidates, graph, routes=None,
                                  now=None, db: Session | None = None) -> Evaluation:
-    """Generate, score and rank all four strategies for a misplaced shipment."""
+    """Generate, score and rank all strategies for a misplaced shipment."""
     now = now or clock.now()
     hubs = graph.graph["hubs"]
     baseline, _ = pm.dedicated_cost(shipment, hubs)
-    strategies = [
-        piggyback_strategy(shipment, piggyback_candidates, now),
+    strategies = piggyback_strategies(shipment, piggyback_candidates, now) + [
         reroute_strategy(shipment, hubs, routes or [], now),
         dedicated_strategy(shipment, hubs, now),
         hold_strategy(shipment, graph, now),
@@ -267,10 +374,14 @@ def generate_recovery_strategies(shipment, piggyback_candidates, graph, routes=N
     reliability = strategy_reliability(db)
     for s in strategies:
         score_strategy(s, shipment, baseline, now, reliability)
-    ranked = sorted(strategies, key=lambda s: (s.feasible, s.score), reverse=True)
-    weights = config.STRATEGY_WEIGHTS.get(shipment.priority, config.STRATEGY_WEIGHTS["medium"])
+    front = mark_pareto(strategies)
+    ranked = sorted(strategies, key=_rank_key, reverse=True)
+    weights = tier_weights(shipment)
     return Evaluation(shipment.id, ranked, determine_recovery_mode(shipment, ranked),
-                      piggyback_candidates, baseline, now, weights)
+                      piggyback_candidates, baseline, now, weights,
+                      pareto_options=pareto_options(front),
+                      rejected_options=rejected_options(shipment, graph),
+                      sensitivity=sensitivity(ranked, weights, ranked[0] if ranked else None))
 
 
 def evaluate_shipment(shipment, graph, routes, db=None, now=None) -> Evaluation:
@@ -281,8 +392,12 @@ def evaluate_shipment(shipment, graph, routes, db=None, now=None) -> Evaluation:
 
 
 def _insert_detour_stop(vehicle: Vehicle, strategy: Strategy) -> None:
-    """Make the vehicle actually visit the detour pickup hub."""
-    if not strategy.legs or strategy.detour_km <= 0:
+    """Make the vehicle actually visit the detour pickup hub.
+
+    Any off-route pickup is a detour, even one of ~0 km. For a detour on the leg being
+    driven (vehicle in transit), the pickup hub becomes the vehicle's next stop.
+    """
+    if not strategy.legs or strategy.legs[0]["vehicle_id"] != vehicle.id:
         return
     pickup, next_hub = strategy.legs[0]["from_hub"], strategy.legs[0]["to_hub"]
     route = list(vehicle.planned_route)

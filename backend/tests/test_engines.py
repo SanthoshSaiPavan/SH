@@ -26,6 +26,8 @@ def world():
 
 
 def graph_for(world, **kw):
+    """Graph as the realtime loop builds it: cargo aboard is protected by the no-harm rule."""
+    kw.setdefault("cargo_aboard", gn.cargo_aboard_from(world["shipments"].values()))
     return gn.build_time_expanded_graph(world["hubs"], list(world["vehicles"].values()),
                                         world["routes"], world["now"], **kw)
 
@@ -110,7 +112,8 @@ def test_capacity_and_hazmat_filters(world):
 def test_demo_piggyback_candidates(world):
     s = world["shipments"]["SHP-501"]
     candidates = pm.find_piggyback_matches(s, graph_for(world), world["now"])
-    assert [c.vehicle_id for c in candidates][:2] == ["TRUCK-102", "TRUCK-104"]
+    assert candidates[0].vehicle_id == "TRUCK-104"
+    assert "TRUCK-102" not in [c.vehicle_id for c in candidates]  # rejected by the no-harm rule
     top = candidates[0]
     assert top.hubs == ["HUB-WGL-01", "HUB-VJA-01"]
     assert 0 <= top.score <= 100
@@ -136,10 +139,11 @@ def test_strategies_ranked_and_bounded(world):
     s = world["shipments"]["SHP-501"]
     ev = re_.evaluate_shipment(s, graph_for(world), world["routes"], now=world["now"])
     assert {st.type for st in ev.strategies} == {"piggyback", "reroute", "dedicated", "hold"}
-    scores = [st.score for st in ev.strategies]
-    assert scores == sorted(scores, reverse=True)
-    assert all(0 <= x <= 100 for x in scores)
-    assert ev.best.type == "piggyback" and ev.best.vehicle_id == "TRUCK-102"
+    keys = [(st.feasible, st.pareto, st.score) for st in ev.strategies]
+    assert keys == sorted(keys, reverse=True)
+    assert all(0 <= st.score <= 100 for st in ev.strategies)
+    assert ev.best.id == "piggyback:TRUCK-104" and ev.best.vehicle_id == "TRUCK-104"
+    assert ev.strategy("piggyback:TRUCK-104") is ev.best
     assert ev.recovery_mode == "pending_approval"
 
 
@@ -159,7 +163,8 @@ def test_tier_weights_shift_ranking(world):
 
 def test_recovery_mode_rules(world):
     s = world["shipments"]["SHP-501"]
-    mk = lambda t, sc: re_.Strategy(id=t, type=t, feasible=True, score=sc)  # noqa: E731
+    mk = lambda t, sc: re_.Strategy(id=t, type=t, feasible=True, score=sc,  # noqa: E731
+                                    on_time_probability=0.99)
     s.priority = "critical"
     assert re_.determine_recovery_mode(s, [mk("piggyback", 90)]) == "auto_executed"
     s.priority = "high"
@@ -206,7 +211,7 @@ def test_simulator_follows_the_road(world):
     from realtime.gps_simulator import GpsSimulator
     from utils import roads
 
-    v = world["vehicles"]["TRUCK-102"]  # HYD → WGL leg
+    v = world["vehicles"]["TRUCK-104"]  # HYD → WGL leg
     path = roads.road_path("HUB-HYD-01", "HUB-WGL-01")
     sim = GpsSimulator()
     for _ in range(20):
