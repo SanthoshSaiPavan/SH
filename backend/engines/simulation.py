@@ -225,20 +225,27 @@ async def run_detection() -> int:
     from realtime.recommendation_loop import recommendation_loop
 
     now = clock.now()
-    alerts = []
-    with SessionLocal() as db:
-        hubs = {h.id: h for h in db.query(Hub).all()}
-        active = db.query(Shipment).filter(Shipment.status.in_(anomaly_detector.ACTIVE_STATUSES),
-                                           Shipment.recovery_strategy.is_(None)).all()
-        for result in anomaly_detector.detect_anomalies(active, hubs, now):
-            s = db.get(Shipment, result.shipment_id)
-            s.status = "misplaced"
-            s.misplacement_type = result.misplacement_type
-            s.misplacement_detected_at = now
-            alerts.append({"shipment_id": s.id, "type": result.misplacement_type,
-                           "severity": result.severity, "severity_score": result.severity_score,
-                           "priority": s.priority, "message": result.reason})
-        db.commit()
+
+    def detect() -> list:  # worker thread, own session
+        alerts = []
+        with SessionLocal() as db:
+            hubs = {h.id: h for h in db.query(Hub).all()}
+            active = db.query(Shipment).filter(
+                Shipment.status.in_(anomaly_detector.ACTIVE_STATUSES),
+                Shipment.recovery_strategy.is_(None)).all()
+            for result in anomaly_detector.detect_anomalies(active, hubs, now):
+                s = db.get(Shipment, result.shipment_id)
+                s.status = "misplaced"
+                s.misplacement_type = result.misplacement_type
+                s.misplacement_detected_at = now
+                alerts.append({"shipment_id": s.id, "type": result.misplacement_type,
+                               "severity": result.severity,
+                               "severity_score": result.severity_score,
+                               "priority": s.priority, "message": result.reason})
+            db.commit()
+        return alerts
+
+    alerts = await asyncio.to_thread(detect)
     for alert in alerts:
         await emit_fleet("shipment:alert", alert, shipment_id=alert["shipment_id"])
         recommendation_loop.mark_dirty(alert["shipment_id"])
@@ -253,12 +260,17 @@ async def engine_tick() -> None:
         simulation.tick_number += 1
     events_count = await run_detection()
     positions = await location_service.positions()
-    events = []
-    with SessionLocal() as db:
-        fleet_progress.sync_carried_shipments(db, positions)
-        events = fleet_progress.progress_virtual_recoveries(db, clock.now())
-        db.commit()
-        recommendation_loop.rebuild(db, positions, location_service.offline_vehicles())
+    now = clock.now()
+
+    def progress() -> list:  # worker thread, own session
+        with SessionLocal() as db:
+            fleet_progress.sync_carried_shipments(db, positions)
+            events = fleet_progress.progress_virtual_recoveries(db, now)
+            db.commit()
+        return events
+
+    events = await asyncio.to_thread(progress)
+    await recommendation_loop.rebuild(positions, location_service.offline_vehicles())
     for event, body, shipment_id, vehicle_id in events:
         await emit_fleet(event, body, shipment_id, vehicle_id)
     events_count += len(events)
