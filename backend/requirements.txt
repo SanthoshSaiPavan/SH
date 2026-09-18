@@ -4,9 +4,14 @@ SQLAlchemy==2.0.54
 psycopg[binary]==3.3.5
 redis==8.1.0
 python-socketio==5.17.0
-networkx==3.6.1
-numpy==2.5.3
-scipy==1.18.1
+# Python >= 3.10. The newest networkx/numpy/scipy need 3.11/3.12, so older interpreters
+# get the last releases that support them.
+networkx==3.6.1; python_version >= "3.11"
+networkx==3.4.2; python_version < "3.11"
+numpy==2.5.3; python_version >= "3.12"
+numpy==2.2.6; python_version < "3.12"
+scipy==1.18.1; python_version >= "3.12"
+scipy==1.15.3; python_version < "3.12"
 pydantic==2.13.5
 PyJWT==2.14.0
 bcrypt==5.0.0
