@@ -6,7 +6,7 @@ import ModeToggle from './ModeToggle'
 import UserMenu from './UserMenu'
 
 const LINKS = [
-  ['/', 'Dashboard'], ['/shipments', 'Shipments'], ['/recovery', 'Recovery'],
+  ['/', 'Dashboard'], ['/map', 'Map'], ['/shipments', 'Shipments'], ['/recovery', 'Recovery'],
   ['/analytics', 'Analytics'], ['/simulation', 'Simulation'],
 ] as const
 

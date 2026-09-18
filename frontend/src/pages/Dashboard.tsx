@@ -1,40 +1,30 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import AlertPanel from '../components/AlertPanel'
-import LiveMap, { shipmentPosition, type RouteOverlay } from '../components/LiveMap'
 import RecoveryModal from '../components/RecoveryModal'
 import ScoreGauge from '../components/ScoreGauge'
-import Sidebar, { type Filters } from '../components/Sidebar'
 import StatsCard from '../components/StatsCard'
 import { useEngineNow } from '../hooks/useEngineNow'
-import { useLiveData, useShipments } from '../hooks/useLiveData'
+import { useLiveData } from '../hooks/useLiveData'
 import { STRATEGY_META } from '../lib/constants'
 import { hours, inr, parseUtc, pct, time, title } from '../lib/format'
 import type { Recommendation } from '../lib/schemas'
+import type { MapLinkState } from './MapView'
 
 export default function Dashboard() {
-  const { hubs, vehicles, shipments, recommendations, activeRecoveries, progress, alerts, dashboard } = useLiveData()
+  const { shipments, recommendations, activeRecoveries, progress, alerts, dashboard } = useLiveData()
   const now = useEngineNow()
-  const [filters, setFilters] = useState<Filters>({ hubType: [], priority: [], status: [] })
+  const navigate = useNavigate()
   const [selected, setSelected] = useState<string | null>(null)
-  const [viewRoute, setViewRoute] = useState<string[] | null>(null)
-  const [focus, setFocus] = useState<{ lng: number; lat: number } | null>(null)
 
-  const filtered = useShipments(filters)
-  const onMap = useMemo(() => filtered.filter((s) =>
-    s.status === 'misplaced' || (s.recovery_strategy && !['recovered', 'delivered'].includes(s.status))), [filtered])
+  const showOnMap = (state: MapLinkState) => navigate('/map', { state })
 
-  const overlays = useMemo<RouteOverlay[]>(() => {
-    const routes: RouteOverlay[] = activeRecoveries.map((a) => ({ id: a.id, hubs: a.recovery_route?.hubs ?? [], color: '#a855f7' }))
-    if (viewRoute) routes.push({ id: 'view', hubs: viewRoute, color: '#64ffda' })
-    return routes
-  }, [activeRecoveries, viewRoute])
-
+  // Misplaced shipments open the recovery modal; anything else is shown on the map.
   const openShipment = (id: string) => {
     const s = shipments[id]
     if (!s) return
-    const pos = shipmentPosition(s, vehicles)
-    if (pos) setFocus({ lng: pos[0], lat: pos[1] })
     if (s.status === 'misplaced') setSelected(id)
+    else showOnMap({ shipmentId: id })
   }
 
   const opportunities = Object.values(recommendations)
@@ -43,9 +33,8 @@ export default function Dashboard() {
     .slice(0, 3)
 
   return (
-    <div className="flex gap-4 p-4">
-      <Sidebar filters={filters} onChange={setFilters} />
-      <div className="flex-1 min-w-0 space-y-4">
+    <div className="p-4">
+      <div className="space-y-4">
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           <StatsCard icon="📦" label="Active shipments" value={dashboard?.active_shipments ?? '—'} color="#3b82f6" />
           <StatsCard icon="⚠" label="Misplaced today" value={dashboard?.misplaced_today ?? '—'} hint={`${dashboard?.misplaced_now ?? 0} awaiting recovery`} color="#ef4444" />
@@ -55,10 +44,6 @@ export default function Dashboard() {
         </div>
 
         {opportunities.map((r) => <OpportunityBanner key={r.shipment_id} rec={r} onOpen={() => openShipment(r.shipment_id)} />)}
-
-        <LiveMap className="h-[520px]" hubs={hubs} vehicles={vehicles} shipments={onMap} routes={overlays}
-          onShipmentClick={openShipment} focus={focus} />
-        {viewRoute && <button className="btn" onClick={() => setViewRoute(null)}>Clear highlighted route ({viewRoute.join(' → ')})</button>}
 
         <div className="grid lg:grid-cols-2 gap-4 h-80">
           <AlertPanel alerts={alerts} onSelect={openShipment} />
@@ -90,7 +75,7 @@ export default function Dashboard() {
       </div>
       {selected && shipments[selected] && (
         <RecoveryModal shipment={shipments[selected]} onClose={() => setSelected(null)}
-          onViewRoute={(h) => { setViewRoute(h); setSelected(null) }} />
+          onViewRoute={(route) => showOnMap({ shipmentId: selected, route })} />
       )}
     </div>
   )
