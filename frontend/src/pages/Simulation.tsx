@@ -41,7 +41,7 @@ export default function Simulation() {
   const demoTrucks = Object.values(vehicles).sort((a, b) => Number(b.id.startsWith('TRUCK')) - Number(a.id.startsWith('TRUCK')) || a.id.localeCompare(b.id))
 
   return (
-    <div className="p-4 space-y-4 max-w-6xl">
+    <div style={{ padding: '32px', maxWidth: '1440px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <h1 className="text-xl font-bold">Simulation control</h1>
       <div className="grid md:grid-cols-3 gap-4">
         <div className="card p-4 space-y-3">

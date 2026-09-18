@@ -1,32 +1,57 @@
-type Props = { score: number; size?: number; label?: string }
-
-/** Circular 0–100 gauge. Colour follows the autonomy thresholds (≥85 / ≥50). */
-export default function ScoreGauge({ score, size = 64, label }: Props) {
-  const r = size / 2 - 5
+/** Circular 0–100 score gauge. */
+export default function ScoreGauge({ score, size = 56, label }: { score: number; size?: number; label?: string }) {
+  const r = (size - 10) / 2
   const c = 2 * Math.PI * r
-  const color = score >= 85 ? '#10b981' : score >= 50 ? '#6366f1' : score > 0 ? '#f59e0b' : '#ef4444'
+  const clamped = Math.min(100, Math.max(0, score))
+  const color = score >= 50 ? 'var(--accent)' : score > 0 ? 'var(--warning)' : 'var(--destructive)'
+
   return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} stroke="#1e2538" strokeWidth={6} fill="none" />
-        <circle cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth={6} fill="none"
-          strokeDasharray={c} strokeDashoffset={c * (1 - Math.min(100, Math.max(0, score)) / 100)}
-          strokeLinecap="round" style={{ transition: 'stroke-dashoffset .6s ease' }} />
+    <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+      <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+        <circle cx={size / 2} cy={size / 2} r={r}
+          stroke="rgba(0,0,0,0.08)" strokeWidth={6} fill="none" />
+        <circle cx={size / 2} cy={size / 2} r={r}
+          stroke={color} strokeWidth={6} fill="none"
+          strokeDasharray={c}
+          strokeDashoffset={c * (1 - clamped / 100)}
+          strokeLinecap="round"
+          style={{ transition: 'stroke-dashoffset 0.6s ease-out' }} />
       </svg>
-      <div className="absolute inset-0 grid place-items-center text-center leading-none">
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'grid', placeItems: 'center', textAlign: 'center',
+      }}>
         <div>
-          <div className="mono font-bold" style={{ color, fontSize: size / 4 }}>{score.toFixed(0)}</div>
-          {label && <div className="text-[9px] text-muted mt-0.5">{label}</div>}
+          <div style={{
+            fontFamily: 'var(--font-mono)',
+            fontWeight: 700,
+            fontSize: size / 4,
+            lineHeight: 1,
+            color: 'var(--foreground)',
+            letterSpacing: '-0.02em',
+          }}>
+            {score.toFixed(0)}
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
-export function ScoreBar({ value, color = '#6366f1' }: { value: number; color?: string }) {
+/** Thin horizontal score bar */
+export function ScoreBar({ value, color = 'var(--accent)' }: { value: number; color?: string }) {
   return (
-    <div className="h-1.5 bg-surface rounded-full overflow-hidden">
-      <div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, value * 100))}%`, background: color, transition: 'width .5s' }} />
+    <div style={{
+      height: '6px', borderRadius: '9999px',
+      background: 'rgba(0,0,0,0.08)',
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        height: '100%', borderRadius: '9999px',
+        width: `${Math.max(0, Math.min(100, value * 100))}%`,
+        background: color,
+        transition: 'width 0.5s ease-out',
+      }} />
     </div>
   )
 }

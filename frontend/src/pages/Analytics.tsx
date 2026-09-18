@@ -43,7 +43,7 @@ export default function Analytics() {
   const usageRows = usage.map((u) => ({ ...u, label: STRATEGY_META[u.strategy].label, sharePct: Math.round(u.share * 100) }))
 
   return (
-    <div className="p-4 space-y-4">
+    <div style={{ padding: '32px', maxWidth: '1440px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '24px' }}>
       <h1 className="text-xl font-bold">Analytics & performance</h1>
       <div className="grid lg:grid-cols-2 gap-4">
         <Panel title="Recovery outcomes" subtitle={successRate === null ? 'No finished recoveries yet' : `${Math.round(successRate * 100)}% success of ${finished} finished`}>

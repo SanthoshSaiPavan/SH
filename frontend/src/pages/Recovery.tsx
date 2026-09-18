@@ -25,7 +25,7 @@ export default function Recovery() {
   const recovering = Object.values(shipments).filter((s) => s.recovery_strategy && !['recovered', 'delivered'].includes(s.status))
 
   return (
-    <div className="p-4 grid lg:grid-cols-3 gap-4">
+    <div style={{ padding: '32px', maxWidth: '1440px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '24px', alignItems: 'start' }}>
       <section>
         <h2 className="font-semibold mb-3">⚠ Awaiting decision <span className="text-muted text-sm">({awaiting.length})</span></h2>
         <div className="space-y-2">

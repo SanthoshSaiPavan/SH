@@ -29,16 +29,15 @@ export const MAP_CONFIG = {
   style: {
     version: 8 as const,
     sources: {
-      osm: {
+      gmaps: {
         type: 'raster' as const,
-        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tiles: ['https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}'],
         tileSize: 256,
-        attribution: '© OpenStreetMap contributors',
+        attribution: '© Google',
       },
     },
     layers: [{
-      id: 'osm', type: 'raster' as const, source: 'osm',
-      paint: { 'raster-brightness-max': 0.45, 'raster-saturation': -0.6, 'raster-contrast': 0.1 },
+      id: 'gmaps', type: 'raster' as const, source: 'gmaps',
     }],
   },
 }

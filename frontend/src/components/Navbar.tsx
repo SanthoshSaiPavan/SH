@@ -1,40 +1,76 @@
 import { NavLink } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import { useLiveData } from '../hooks/useLiveData'
 import { useSocket } from '../hooks/useSocket'
 import { time } from '../lib/format'
-import ModeToggle from './ModeToggle'
 import UserMenu from './UserMenu'
-
-const LINKS = [
-  ['/', 'Dashboard'], ['/map', 'Map'], ['/shipments', 'Shipments'], ['/recovery', 'Recovery'],
-  ['/analytics', 'Analytics'], ['/simulation', 'Simulation'],
-] as const
+import { Bell, BellOff, LayoutDashboard, Box, Truck, Wallet, LineChart } from 'lucide-react'
+import { SlideTabs } from './ui/slide-tabs'
 
 export default function Navbar() {
   const { connected } = useSocket()
   const { sim, muted, setMuted } = useLiveData()
+
   return (
-    <header className="flex items-center gap-6 px-5 h-14 border-b border-[var(--border-subtle)] bg-card/80 backdrop-blur sticky top-0 z-20">
-      <div className="flex items-center gap-2 font-bold text-lg">
-        <img src="/favicon.svg" className="w-7 h-7" alt="" />
-        <span>Piggy<span className="text-piggy">Ship</span></span>
-      </div>
-      <nav className="flex gap-1">
-        {LINKS.map(([to, label]) => (
-          <NavLink key={to} to={to} end={to === '/'}
-            className={({ isActive }) => `px-3 py-1.5 rounded-lg text-sm font-medium transition ${isActive ? 'bg-primary/20 text-ink' : 'text-muted hover:text-ink'}`}>
-            {label}
-          </NavLink>
-        ))}
-      </nav>
-      <div className="ml-auto flex items-center gap-4 text-xs">
-        <ModeToggle />
-        {sim && <span className="mono text-muted" title="Engine clock">⏱ {time(sim.sim_time)}</span>}
-        <span className="flex items-center gap-1.5" title="Socket connection">
-          <span className={`w-2 h-2 rounded-full ${connected ? 'bg-success' : 'bg-danger'}`} />
-          {connected ? 'Live' : 'Reconnecting…'}
+    <header style={{
+      height: '70px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '0 32px',
+      background: 'var(--background)',
+      borderBottom: '1px solid rgba(0,0,0,0.05)',
+      position: 'sticky',
+      top: 0,
+      zIndex: 50,
+    }}>
+      {/* Logo */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{
+          width: '32px', height: '32px',
+          background: 'var(--foreground)',
+          borderRadius: '8px',
+          display: 'grid', placeItems: 'center',
+        }}>
+          <span style={{ fontSize: '14px', fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.02em' }}>Q</span>
+        </div>
+        <span style={{ fontSize: '18px', fontWeight: 600, color: 'var(--foreground)', letterSpacing: '-0.03em' }}>
+          PiggyIQ
         </span>
-        <button className="text-muted hover:text-ink" onClick={() => setMuted(!muted)} title="Alert sounds">{muted ? '🔇' : '🔔'}</button>
+      </div>
+
+      {/* SlideTabs Navigation */}
+      <SlideTabs />
+
+      {/* Right side */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        {sim && (
+          <span style={{
+            fontSize: '12px',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--subtle-foreground)',
+          }}>
+            {time(sim.sim_time)}
+          </span>
+        )}
+
+        <button
+          onClick={() => setMuted(!muted)}
+          title={muted ? 'Unmute alerts' : 'Mute alerts'}
+          style={{
+            width: '36px', height: '36px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: '#FFFFFF',
+            border: '1px solid rgba(0,0,0,0.05)',
+            borderRadius: '50%',
+            color: 'var(--foreground)',
+            cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+          }}
+        >
+          {muted ? <BellOff size={16} /> : <Bell size={16} />}
+        </button>
+
         <UserMenu />
       </div>
     </header>

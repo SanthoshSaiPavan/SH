@@ -62,14 +62,24 @@ export default function LiveMap({ hubs, vehicles, shipments, routes = [], showPl
   // Map instance + animation loop
   useEffect(() => {
     if (!container.current) return
-    const m = new maplibregl.Map({ container: container.current, style: MAP_CONFIG.style, center: MAP_CONFIG.center, zoom: MAP_CONFIG.zoom, attributionControl: { compact: true } })
+    const m = new maplibregl.Map({ 
+      container: container.current, 
+      style: MAP_CONFIG.style, 
+      center: MAP_CONFIG.center, 
+      zoom: MAP_CONFIG.zoom, 
+      attributionControl: { compact: true } 
+    })
     m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
     m.on('load', () => {
       m.addSource('planned', { type: 'geojson', data: EMPTY })
-      m.addLayer({ id: 'planned', type: 'line', source: 'planned', paint: { 'line-color': ['get', 'color'], 'line-width': 1.5, 'line-opacity': 0.45, 'line-dasharray': [2, 3] } })
+      m.addLayer({ id: 'planned', type: 'line', source: 'planned', paint: { 'line-color': ['get', 'color'], 'line-width': 3, 'line-opacity': 0.6, 'line-dasharray': [2, 2] } })
+      
       m.addSource('overlay', { type: 'geojson', data: EMPTY })
-      m.addLayer({ id: 'overlay-glow', type: 'line', source: 'overlay', paint: { 'line-color': ['get', 'color'], 'line-width': 9, 'line-opacity': 0.25, 'line-blur': 4 } })
-      m.addLayer({ id: 'overlay', type: 'line', source: 'overlay', paint: { 'line-color': ['get', 'color'], 'line-width': 3.5 } })
+      // Casing / Border for Google Maps style
+      m.addLayer({ id: 'overlay-casing', type: 'line', source: 'overlay', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#FFFFFF', 'line-width': 7, 'line-opacity': 0.9 } })
+      // Inner line (colored by strategy)
+      m.addLayer({ id: 'overlay', type: 'line', source: 'overlay', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': ['get', 'color'], 'line-width': 4 } })
+      
       setReady(true)
     })
     map.current = m
@@ -132,8 +142,8 @@ export default function LiveMap({ hubs, vehicles, shipments, routes = [], showPl
         return
       }
       const el = document.createElement('div')
-      el.className = 'vehicle-marker'
-      el.innerHTML = `<div style="position:relative"><div class="arrow" style="position:absolute;inset:-12px;display:flex;justify-content:center;transition:transform .6s"><div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:8px solid #a5b4fc"></div></div><span>🚚</span><div class="dot"></div></div>`
+      el.className = 'vehicle-marker cursor-pointer'
+      el.innerHTML = `<div style="position:relative; z-index: 10;"><div class="arrow" style="position:absolute;inset:-16px;display:flex;justify-content:center;transition:transform .6s"><div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:10px solid #a5b4fc"></div></div><span style="font-size:26px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); position:relative; z-index:2;">🚚</span><div class="dot" style="position:absolute; bottom:-4px; right:-4px; width:12px; height:12px; border-radius:50%; border:2px solid white; z-index:3;"></div></div>`
       const arrow = el.querySelector('.arrow') as HTMLElement
       const dot = el.querySelector('.dot') as HTMLElement
       arrow.style.transform = `rotate(${v.live?.heading ?? 0}deg)`
@@ -163,8 +173,11 @@ export default function LiveMap({ hubs, vehicles, shipments, routes = [], showPl
         return
       }
       const el = document.createElement('div')
-      el.className = 'shipment-marker'
+      el.className = 'shipment-marker cursor-pointer'
       el.style.borderColor = color
+      el.style.fontSize = '22px'
+      el.style.filter = 'drop-shadow(0 2px 4px rgba(0,0,0,0.2))'
+      el.style.transform = 'translateY(-50%)'
       el.title = `${s.id} (${s.priority})`
       el.textContent = '📦'
       el.addEventListener('click', (e) => { e.stopPropagation(); clickRef.current?.(s.id) })
