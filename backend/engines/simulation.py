@@ -19,6 +19,7 @@ import random
 from datetime import timedelta
 
 from sqlalchemy import func
+from sqlalchemy.orm import selectinload
 
 import config
 from database.db import SessionLocal
@@ -230,10 +231,11 @@ async def run_detection() -> int:
         alerts = []
         with SessionLocal() as db:
             hubs = {h.id: h for h in db.query(Hub).all()}
-            active = db.query(Shipment).filter(
+            vehicles = {v.id: v for v in db.query(Vehicle).all()}
+            active = (db.query(Shipment).options(selectinload(Shipment.scans)).filter(
                 Shipment.status.in_(anomaly_detector.ACTIVE_STATUSES),
-                Shipment.recovery_strategy.is_(None)).all()
-            for result in anomaly_detector.detect_anomalies(active, hubs, now):
+                Shipment.recovery_strategy.is_(None)).all())
+            for result in anomaly_detector.detect_anomalies(active, hubs, now, vehicles=vehicles):
                 s = db.get(Shipment, result.shipment_id)
                 s.status = "misplaced"
                 s.misplacement_type = result.misplacement_type
