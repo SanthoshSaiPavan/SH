@@ -3,7 +3,8 @@
 Every SIM_TICK_SECONDS the engine loop:
   1. (DEMO SIMULATION, running) advances the simulated clock and moves every
      vehicle through the GPS simulator → location ingest pipeline
-  2. (DEMO) every N ticks randomly misplaces a shipment
+  2. (DEMO) every N ticks randomly misplaces a shipment, and tops the network back up
+     to SIM_TARGET_ACTIVE_SHIPMENTS by loading new shipments at hubs
   3. runs anomaly detection (Module 1) and raises alerts
   4. rebuilds the time-expanded graph (Module 4) for the recommendation loop
   5. advances reroute/dedicated recoveries and syncs carried shipment positions
@@ -17,9 +18,12 @@ import logging
 import random
 from datetime import timedelta
 
+from sqlalchemy import func
+
 import config
 from database.db import SessionLocal
 from database.models import Hub, Route, Shipment, Vehicle
+from database.seed_data import PRIORITY_MIX, carried_shipment
 from engines import anomaly_detector, fleet_progress
 from realtime import auth
 from realtime.gps_simulator import gps_simulator, restart_reversed
@@ -144,6 +148,46 @@ class SimulationEngine:
         db.commit()
         return {"shipment_id": shipment.id, "type": kind, "detail": detail}
 
+    def generate_shipment(self, db, vehicle: Vehicle) -> Shipment:
+        """Load one new shipment onto `vehicle`, which is dwelling at a hub."""
+        now = clock.now()
+        hubs = {h.id: h for h in db.query(Hub).all()}
+        date_tag = now.strftime("%Y%m%d")
+        n = db.query(func.count(Shipment.id)).scalar() + 1
+        while db.get(Shipment, f"SHP-{date_tag}-{n:04d}") is not None:
+            n += 1
+        shipment = carried_shipment(self.rng, now, hubs, vehicle, vehicle.current_stop_index,
+                                    f"SHP-{date_tag}-{n:04d}", f"PGS{date_tag}{n:04d}",
+                                    self.rng.choice(PRIORITY_MIX), now)
+        vehicle.used_capacity_kg += shipment.weight_kg
+        vehicle.used_capacity_cbm += shipment.volume_cbm
+        db.add(shipment)
+        db.commit()
+        return shipment
+
+    async def top_up_shipments(self) -> None:
+        """Refill the network toward SIM_TARGET_ACTIVE_SHIPMENTS, one new shipment per
+        vehicle currently dwelling at a (non-final) hub with room for it."""
+        created = []
+        with SessionLocal() as db:
+            deficit = (config.SIM_TARGET_ACTIVE_SHIPMENTS
+                       - db.query(Shipment).filter_by(status="in_transit").count())
+            if deficit <= 0:
+                return
+            at_hub = [v for v in db.query(Vehicle).filter_by(status="at_hub").all()
+                      if v.current_stop_index < len(v.planned_route) - 1
+                      and v.total_capacity_kg - v.used_capacity_kg >= 400]
+            self.rng.shuffle(at_hub)
+            for vehicle in at_hub[:deficit]:
+                s = self.generate_shipment(db, vehicle)
+                created.append({"shipment_id": s.id, "vehicle_id": s.current_vehicle_id,
+                                "origin_hub_id": s.origin_hub_id,
+                                "destination_hub_id": s.destination_hub_id,
+                                "priority": s.priority})
+        for payload in created:
+            log.info("Generated shipment %s on %s", payload["shipment_id"], payload["vehicle_id"])
+            await emit_fleet("shipment:created", payload, shipment_id=payload["shipment_id"])
+
     async def step(self) -> None:
         minutes = config.SIM_MINUTES_PER_TICK * self.speed
         clock.advance(timedelta(minutes=minutes))
@@ -154,6 +198,8 @@ class SimulationEngine:
                     log.info("Simulated misplacement: %s", self.misplace(db))
                 except ValueError as exc:
                     log.info("Skipped simulated misplacement: %s", exc)
+        if self.tick_number % config.SIM_NEW_SHIPMENT_EVERY_N_TICKS == 0:
+            await self.top_up_shipments()
 
 
 simulation = SimulationEngine()

@@ -131,10 +131,14 @@ LOW_CONFIDENCE_THRESHOLD = 50.0
 
 # --- Module 5: simulation -----------------------------------------------------
 SIM_TICK_SECONDS = 2.0
-SIM_MINUTES_PER_TICK = 5.0  # ASSUMPTION: at 1x, each 2 s tick advances the sim clock 5 min
+SIM_MINUTES_PER_TICK = 2.0  # ASSUMPTION: at 1x, each 2 s tick advances the sim clock 2 min
 SIM_SPEEDS = (1, 2, 5, 10)
 SIM_MISPLACE_EVERY_N_TICKS = 30  # ASSUMPTION
 SIM_MISPLACE_PROBS = {"wrong_hub": 0.30, "wrong_vehicle": 0.40, "stuck": 0.30}
+# Continuous shipment generation (DEMO only): every N ticks, while fewer than the target are
+# in transit, load one new shipment onto each vehicle stopped at a hub (up to the shortfall).
+SIM_NEW_SHIPMENT_EVERY_N_TICKS = 1  # ASSUMPTION
+SIM_TARGET_ACTIVE_SHIPMENTS = 30  # ASSUMPTION: matches the seeded 30 shipments
 
 # --- Module 7: real-time layer -----------------------------------------------
 STALE_AFTER_SECONDS = 10

@@ -10,6 +10,7 @@ import { TEST_DRIVER_USERNAME } from './lib/constants'
 import Analytics from './pages/Analytics'
 import Dashboard from './pages/Dashboard'
 import Driver from './pages/Driver'
+import MapView from './pages/MapView'
 import Recovery from './pages/Recovery'
 import Shipments from './pages/Shipments'
 import Simulation from './pages/Simulation'
@@ -68,6 +69,7 @@ export default function App() {
             <Routes>
               <Route path="/driver" element={<DriverShell />} />
               <Route path="/" element={<OperatorShell><Dashboard /></OperatorShell>} />
+              <Route path="/map" element={<OperatorShell><MapView /></OperatorShell>} />
               <Route path="/shipments" element={<OperatorShell><Shipments /></OperatorShell>} />
               <Route path="/recovery" element={<OperatorShell><Recovery /></OperatorShell>} />
               <Route path="/analytics" element={<OperatorShell><Analytics /></OperatorShell>} />

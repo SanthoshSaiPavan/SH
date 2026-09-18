@@ -34,7 +34,8 @@ run everything from `backend/` (pytest.ini sets `pythonpath = .`).
 ## Architecture
 
 One process: FastAPI REST + python-socketio (`app.py`), with four background asyncio tasks started in `lifespan`:
-1. `engines/simulation.engine_loop` (every 2 s): in DEMO mode advances the sim clock and moves vehicles; then
+1. `engines/simulation.engine_loop` (every 2 s): in DEMO mode advances the sim clock, moves vehicles, and tops up
+   in-transit shipments to `SIM_TARGET_ACTIVE_SHIPMENTS` (loaded onto vehicles dwelling at hubs; emits `shipment:created`); then
    Module 1 detection → rebuilds the time-expanded graph → advances reroute/dedicated recoveries → `simulation:tick`.
 2. `realtime/recommendation_loop.run` (every 5 s): re-evaluates *dirty* misplaced shipments (Modules 2→3) and applies
    the switching rules (switch only if a new score beats the current one by `SWITCH_MARGIN`, or the current one became
@@ -47,7 +48,7 @@ DRIVER claims) or a real driver socket, goes through `location_service.ingest`. 
 writes Redis, broadcasts to rooms, and calls `fleet_progress.on_position`, which handles hub arrival/departure,
 shipment scans and deliveries, and recovery pickup/unload following the legs stored on `RecoveryAction.recovery_route`.
 
-**Clock.** `utils/clock.now()` is simulated time in DEMO mode (5 sim-min per tick × speed) and wall time in LIVE mode.
+**Clock.** `utils/clock.now()` is simulated time in DEMO mode (2 sim-min per tick × speed) and wall time in LIVE mode.
 All engine timestamps are naive UTC. Staleness (`last_seen`) uses wall time.
 
 **Time-expanded graph (`engines/graph_network.py`).** Nodes are keyed tuples (`hub`/`dep`/`arr`/`entry`/`sink`), and each

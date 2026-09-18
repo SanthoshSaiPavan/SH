@@ -50,7 +50,7 @@ export default function Simulation() {
             <button className={`btn ${sim?.mode === 'live' ? 'btn-success' : ''}`} onClick={() => run(() => post('/api/simulation/mode', { mode: 'live' }))}>LIVE GPS</button>
             <button className={`btn ${sim?.mode === 'demo' ? 'btn-primary' : ''}`} onClick={() => run(() => post('/api/simulation/mode', { mode: 'demo' }))}>DEMO SIMULATION</button>
           </div>
-          <p className="text-xs text-muted">LIVE GPS accepts positions from drivers' phones (/driver). DEMO SIMULATION moves every vehicle on a compressed clock (5 sim-min per 2 s tick at 1×).</p>
+          <p className="text-xs text-muted">LIVE GPS accepts positions from drivers' phones (/driver). DEMO SIMULATION moves every vehicle on a compressed clock (2 sim-min per 2 s tick at 1×).</p>
         </div>
         <div className="card p-4 space-y-3">
           <h3 className="font-semibold">Engine</h3>

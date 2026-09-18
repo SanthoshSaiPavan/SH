@@ -166,3 +166,23 @@ def test_recovery_mode_rules(world):
     assert re_.determine_recovery_mode(s, [mk("piggyback", 90)]) == "pending_approval"
     assert re_.determine_recovery_mode(s, [mk("piggyback", 40)]) == "escalated"
     assert re_.determine_recovery_mode(s, [mk("dedicated", 70)]) == "escalated"
+
+
+# ---- Module 5: continuous shipment generation ---------------------------------
+def test_generated_shipment_rides_vehicle_from_its_hub(world):
+    import random
+
+    from database.seed_data import carried_shipment
+
+    v = world["vehicles"]["VEH-TRK-0001"]
+    idx = v.current_stop_index
+    hub = world["hubs"][v.planned_route[idx]]
+    v.status, v.current_lat, v.current_lng = "at_hub", hub.lat, hub.lng  # as fleet_progress.arrive does
+    s = carried_shipment(random.Random(1), world["now"], world["hubs"], v, idx,
+                         "SHP-T-0001", "PGST0001", "medium", world["now"])
+    assert s.origin_hub_id == v.planned_route[idx] == s.expected_route[0]
+    assert s.destination_hub_id in v.planned_route[idx + 1:]
+    assert s.current_vehicle_id == v.id and s.status == "in_transit"
+    assert s.deadline > world["now"]
+    # A freshly loaded shipment on its planned vehicle is not an anomaly.
+    assert ad.detect_shipment(s, world["hubs"], world["now"]) is None
