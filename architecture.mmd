@@ -1,0 +1,60 @@
+flowchart TD
+    %% Define Styles
+    classDef frontend fill:#3b82f6,stroke:#1e3a8a,stroke-width:2px,color:#fff
+    classDef backend fill:#10b981,stroke:#047857,stroke-width:2px,color:#fff
+    classDef database fill:#f59e0b,stroke:#b45309,stroke-width:2px,color:#fff
+    classDef output fill:#8b5cf6,stroke:#4c1d95,stroke-width:2px,color:#fff
+    
+    subgraph External["External Data Sources"]
+        GPS["Live GPS Streams (Trucks)"]
+        TMS["Transport Mgmt System (Shipments)"]
+    end
+    
+    subgraph DataLayer["Data Layer"]
+        Redis[("Redis\n(Live State & Pub/Sub)")]:::database
+        Postgres[("PostgreSQL\n(Hubs, Routes, History)")]:::database
+    end
+    
+    subgraph Engines["Backend Engines (FastAPI / Python)"]
+        RT["Real-Time Ingestion (Sockets)"]:::backend
+        Anomaly["Anomaly Detector"]:::backend
+        Fleet["Fleet Progress"]:::backend
+        GraphBuilder["Graph Builder Engine\n(networkx)"]:::backend
+        Recovery["Recovery Engine\n(Dijkstra/A*)"]:::backend
+        Piggyback["Piggyback Matcher"]:::backend
+        Decision["Decision Agent"]:::backend
+    end
+    
+    subgraph Presentation["Frontend (React / Vite)"]
+        Map["2D Map View\n(MapLibre)"]:::frontend
+        Graph3D["3D Control Tower\n(Three.js)"]:::frontend
+        Dash["Analytics Dashboard"]:::frontend
+    end
+    
+    subgraph Output["Final Output"]
+        Action["Actionable Recovery Plan\n(Piggyback / Detour)"]:::output
+    end
+
+    %% Connections
+    GPS --> RT
+    TMS --> Postgres
+    
+    RT --> Redis
+    RT --> Anomaly
+    RT --> Fleet
+    
+    Postgres --> GraphBuilder
+    Redis --> GraphBuilder
+    
+    Anomaly --> Recovery
+    GraphBuilder -->|"Builds Time-Expanded Graph"| Recovery
+    
+    Fleet --> Piggyback
+    Recovery --> Decision
+    Piggyback --> Decision
+    
+    Decision -->|"Calculates best path"| Action
+    
+    Decision -.->|"Serializes graph state"| Graph3D
+    RT -.->|"Live positions"| Map
+    Postgres -.->|"Metrics"| Dash

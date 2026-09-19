@@ -128,14 +128,17 @@ export const GraphNodeSchema = z.object({
 })
 export type GraphNode = z.infer<typeof GraphNodeSchema>
 
+export const GraphEdgeSchema = z.object({
+  source: z.string(), target: z.string(), kind: z.string(),
+  vehicle_id: z.string().optional(), km: z.number().optional(), detour: z.boolean().optional(),
+})
+export type GraphEdge = z.infer<typeof GraphEdgeSchema>
+
 export const GraphSnapshotSchema = z.object({
   now: z.string(), hours: z.number(), route_id: z.string().nullable(),
   hubs: z.array(z.object({ id: z.string(), name: z.string(), lat: z.number(), lng: z.number() })),
   nodes: z.array(GraphNodeSchema),
-  edges: z.array(z.object({
-    source: z.string(), target: z.string(), kind: z.string(),
-    vehicle_id: z.string().optional(), km: z.number().optional(), detour: z.boolean().optional(),
-  })),
+  edges: z.array(GraphEdgeSchema),
   recommendations: z.array(z.object({
     shipment_id: z.string(), hub: z.string().nullable(), t: z.number(),
     legs: z.array(z.object({ vehicle_id: z.string(), from_hub: z.string(), to_hub: z.string(), dep_t: z.number(), arr_t: z.number() })),

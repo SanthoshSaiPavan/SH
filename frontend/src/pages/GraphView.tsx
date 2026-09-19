@@ -3,28 +3,32 @@ import { useLiveData } from '../hooks/useLiveData'
 import { useSimMode } from '../hooks/useSimMode'
 import { api } from '../lib/api'
 import { time, title } from '../lib/format'
-import { createGraphScene, EDGE_LAYER_META, type CameraPreset, type EdgeLayer, type GraphScene } from '../lib/graphScene'
-import { GraphSnapshotSchema, type GraphNode, type GraphSnapshot } from '../lib/schemas'
+import {
+  createGraphScene, EDGE_LAYER_META,
+  type CameraPreset, type EdgeLayer, type GraphScene, type Selection,
+} from '../lib/graphScene'
+import { GraphSnapshotSchema, type GraphSnapshot } from '../lib/schemas'
 
-const ALL_LAYERS: Record<EdgeLayer, boolean> = { leg: true, wait: true, board: true, unload: true, onboard: false, detour: false }
-const REFRESH_MS = 10_000 // follow-live refresh, triggered by simulation ticks
+const ALL_LAYERS: Record<EdgeLayer, boolean> = {
+  leg: true, wait: true, board: true, unload: true, onboard: false, detour: false,
+}
+const REFRESH_MS = 10_000
 
 const fmtT = (t: number) => `+${t.toFixed(1)} h`
 
 export default function GraphView() {
   const { sim } = useLiveData()
-  // Demo/Live follows the navbar's LIVE GPS | DEMO mode, so both switches stay in sync.
   const { mode: source, setMode: setSource, busy } = useSimMode()
-  const [hours, setHours] = useState(24)
+  const [hours, setHours]           = useState(24)
   const [hoursDraft, setHoursDraft] = useState(24)
-  const [layers, setLayers] = useState(ALL_LAYERS)
-  const [preset, setPreset] = useState<CameraPreset>('3d')
-  const [follow, setFollow] = useState(true)
-  const [snap, setSnap] = useState<GraphSnapshot | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [selected, setSelected] = useState<GraphNode | null>(null)
-  const [reload, setReload] = useState(0)
-  const hostRef = useRef<HTMLDivElement>(null)
+  const [layers, setLayers]         = useState(ALL_LAYERS)
+  const [preset, setPreset]         = useState<CameraPreset>('3d')
+  const [follow, setFollow]         = useState(true)
+  const [snap, setSnap]             = useState<GraphSnapshot | null>(null)
+  const [error, setError]           = useState<string | null>(null)
+  const [selected, setSelected]     = useState<Selection>(null)
+  const [reload, setReload]         = useState(0)
+  const hostRef  = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<GraphScene | null>(null)
   const lastFetch = useRef(0)
   const layersRef = useRef(layers)
@@ -35,7 +39,7 @@ export default function GraphView() {
     return () => { scene.dispose(); sceneRef.current = null }
   }, [])
 
-  // Debounce the time-window slider.
+  // Debounce time-window slider
   useEffect(() => {
     const id = setTimeout(() => setHours(hoursDraft), 300)
     return () => clearTimeout(id)
@@ -50,7 +54,7 @@ export default function GraphView() {
     return () => { cancelled = true }
   }, [source, hours, reload])
 
-  // Follow live: re-fetch on a simulation tick, at most every REFRESH_MS.
+  // Follow live: re-fetch on simulation tick, at most every REFRESH_MS
   useEffect(() => {
     if (follow && sim && Date.now() - lastFetch.current >= REFRESH_MS) setReload((r) => r + 1)
   }, [follow, sim?.tick_number]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -58,10 +62,19 @@ export default function GraphView() {
   useEffect(() => {
     if (!snap) return
     sceneRef.current?.update(snap, layersRef.current)
+    // Keep selection if the selected node still exists; clear edge selections on refresh
     setSelected((cur) => {
-      const still = cur && snap.nodes.find((n) => n.id === cur.id)
-      sceneRef.current?.select(still ? still.id : null)
-      return still ?? null
+      if (!cur) return null
+      if (cur.kind === 'node') {
+        const still = snap.nodes.find((n) => n.id === cur.node.id)
+        sceneRef.current?.select(still ? still.id : null)
+        return still ? { kind: 'node', node: still } : null
+      }
+      if (cur.kind === 'edge') {
+        const still = snap.edges.find((e) => e.source === cur.edge.source && e.target === cur.edge.target)
+        return still ? { kind: 'edge', edge: still } : null
+      }
+      return null
     })
   }, [snap])
 
@@ -69,8 +82,8 @@ export default function GraphView() {
   useEffect(() => { sceneRef.current?.setCamera(preset) }, [preset])
 
   const stats = useMemo(() => snap && {
-    nodes: snap.nodes.length,
-    edges: snap.edges.length,
+    nodes:    snap.nodes.length,
+    edges:    snap.edges.length,
     vehicles: new Set(snap.nodes.flatMap((n) => (n.vehicle_id ? [n.vehicle_id] : []))).size,
   }, [snap])
 
@@ -138,7 +151,7 @@ export default function GraphView() {
             <input type="checkbox" checked={follow} onChange={() => setFollow((f) => !f)} className="accent-[#18181A]" />
             Follow live (refresh every {REFRESH_MS / 1000} s)
           </label>
-          <p className="text-[11px] text-muted">Drag to orbit · scroll to zoom · right-drag to pan · click a node to inspect</p>
+          <p className="text-[11px] text-muted">Drag to orbit · scroll to zoom · right-drag to pan · click a node or edge to inspect</p>
         </Section>
       </aside>
 
@@ -146,14 +159,26 @@ export default function GraphView() {
         <div ref={hostRef} className="absolute inset-0" />
         <div className="absolute top-4 left-4 flex items-center gap-2 rounded-full bg-[var(--dark-surface-2)] px-3 py-1.5 text-[11px] font-medium text-white pointer-events-none">
           <span className={`w-2 h-2 rounded-full ${error ? 'bg-[var(--destructive)]' : 'bg-[var(--success)]'}`} />
-          {error ? `Graph unavailable: ${error}` : `${source === 'demo' ? `DEMO · ${snap?.route_id ?? ''}` : 'LIVE NETWORK'}${snap ? ` · graph time ${time(snap.now)}` : ' · loading…'}`}
+          {error
+            ? `Graph unavailable: ${error}`
+            : `${source === 'demo' ? `DEMO · ${snap?.route_id ?? ''}` : 'LIVE NETWORK'}${snap ? ` · graph time ${time(snap.now)}` : ' · loading…'}`}
         </div>
         <div className="absolute bottom-4 left-4 flex gap-3.5 rounded-full bg-[var(--dark-surface-2)] px-3 py-1.5 text-[11px] text-[var(--dark-muted)] pointer-events-none">
-          <span>↑ time</span><span>floor = hub geography</span><span className="text-[var(--accent)] font-medium">lime = recommended path</span>
+          <span>↑ time</span><span>floor = hub geography</span>
+          <span className="text-[var(--accent)] font-medium">lime = recommended path</span>
+        </div>
+        {/* Legend for node/edge shapes */}
+        <div className="absolute top-4 right-4 flex flex-col gap-1.5 rounded-xl bg-[var(--dark-surface-2)] px-3 py-2.5 text-[10px] text-[var(--dark-muted)] pointer-events-none">
+          <span className="text-white font-medium text-[11px] mb-0.5">Node types</span>
+          <span>● Sphere = Departure (dep)</span>
+          <span>■ Cube = Arrival (arr)</span>
+          <span>◆ Diamond = Entry (misplaced)</span>
+          <span>▲ Cone = Sink (goal)</span>
+          <span>· Small sphere = Hub timeline</span>
         </div>
       </div>
 
-      <Inspector node={selected} snap={snap} />
+      <Inspector selected={selected} snap={snap} />
     </div>
   )
 }
@@ -167,36 +192,42 @@ function Section({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function Inspector({ node, snap }: { node: GraphNode | null; snap: GraphSnapshot | null }) {
-  const edges = useMemo(() => {
-    if (!node || !snap) return []
+function Inspector({ selected, snap }: { selected: Selection; snap: GraphSnapshot | null }) {
+  const nodeEdges = useMemo(() => {
+    if (!selected || selected.kind !== 'node' || !snap) return []
     const at = new Map(snap.nodes.map((n) => [n.id, n]))
     return snap.edges.flatMap((e) => {
-      if (e.target === node.id) return [{ dir: 'in', e, other: at.get(e.source)! }]
-      if (e.source === node.id) return [{ dir: 'out', e, other: at.get(e.target)! }]
+      if (e.target === selected.node.id) return [{ dir: 'in',  e, other: at.get(e.source)! }]
+      if (e.source === selected.node.id) return [{ dir: 'out', e, other: at.get(e.target)! }]
       return []
     })
-  }, [node, snap])
+  }, [selected, snap])
+
   const recs = snap?.recommendations ?? []
+  const nodeById = useMemo(() => snap ? new Map(snap.nodes.map((n) => [n.id, n])) : new Map(), [snap])
 
   return (
     <aside className="card p-5 flex flex-col gap-4 overflow-y-auto">
       <div className="text-[11px] uppercase font-semibold tracking-wide text-[var(--subtle-foreground)]">Inspector</div>
-      {!node ? (
-        <p className="text-xs text-muted">Click a node in the graph to see its hub, time, capacity and connecting edges.</p>
-      ) : (
+
+      {!selected ? (
+        <p className="text-xs text-muted">Click a node or edge in the graph to see its details, capacity, and connections.</p>
+      ) : selected.kind === 'node' ? (
+        /* ── Node detail ── */
         <>
           <div className="flex flex-col gap-1">
-            <span className="self-start rounded-full bg-[var(--accent)] px-2 py-0.5 text-[11px] font-medium">{node.kind} node</span>
-            <div className="text-base font-semibold">{node.vehicle_id ? `${node.vehicle_id} @ ${node.hub}` : node.hub}</div>
+            <span className="self-start rounded-full bg-[var(--accent)] px-2 py-0.5 text-[11px] font-medium">{selected.node.kind} node</span>
+            <div className="text-base font-semibold">
+              {selected.node.vehicle_id ? `${selected.node.vehicle_id} @ ${selected.node.hub}` : selected.node.hub}
+            </div>
           </div>
           <dl className="text-xs">
             {([
-              ['Hub', node.hub],
-              ['Time', fmtT(node.t)],
-              ...(node.vehicle_id ? [
-                ['Free capacity', `${Math.round(node.remaining_kg ?? 0)} of ${Math.round(node.total_kg ?? 0)} kg`],
-                ['Variant', node.variant ?? 'main'],
+              ['Hub',  selected.node.hub],
+              ['Time', fmtT(selected.node.t)],
+              ...(selected.node.vehicle_id ? [
+                ['Free capacity', `${Math.round(selected.node.remaining_kg ?? 0)} of ${Math.round(selected.node.total_kg ?? 0)} kg`],
+                ['Variant', selected.node.variant ?? 'main'],
               ] : []),
             ] as [string, string][]).map(([k, v]) => (
               <div key={k} className="flex justify-between py-2 border-b border-[var(--surface-tertiary)]">
@@ -205,29 +236,77 @@ function Inspector({ node, snap }: { node: GraphNode | null; snap: GraphSnapshot
             ))}
           </dl>
           <div className="flex flex-col gap-1.5">
-            <div className="text-[11px] uppercase font-semibold tracking-wide text-[var(--subtle-foreground)]">Edges</div>
-            {edges.length === 0 && <p className="text-xs text-muted">None inside the time window.</p>}
-            {edges.map(({ dir, e, other }) => (
+            <div className="text-[11px] uppercase font-semibold tracking-wide text-[var(--subtle-foreground)]">Connecting edges</div>
+            {nodeEdges.length === 0 && <p className="text-xs text-muted">None inside the time window.</p>}
+            {nodeEdges.map(({ dir, e, other }) => (
               <div key={`${e.source}>${e.target}`} className="flex items-center gap-2 rounded-lg bg-[var(--surface-secondary)] px-2.5 py-2">
                 <span className="w-1 self-stretch rounded" style={{ background: EDGE_LAYER_META[(e.kind in EDGE_LAYER_META ? e.kind : 'wait') as EdgeLayer].color }} />
                 <div className="text-[11px]">
                   <div className="font-medium">{dir} · {e.kind}</div>
-                  <div className="text-muted">{dir === 'in' ? 'from' : 'to'} {other.kind} {other.hub} {fmtT(other.t)}{e.km ? ` · ${e.km} km` : ''}</div>
+                  <div className="text-muted">{dir === 'in' ? 'from' : 'to'} {other?.kind} {other?.hub} {other ? fmtT(other.t) : ''}{e.km ? ` · ${e.km} km` : ''}</div>
                 </div>
               </div>
             ))}
           </div>
         </>
-      )}
-      {recs.map((r) => (
-        <div key={r.shipment_id} className="rounded-xl bg-[var(--dark-surface)] p-3.5 text-xs text-white flex flex-col gap-1.5">
-          <div className="font-semibold text-[var(--accent)]">{r.shipment_id} · recommended</div>
-          <div>
-            Entry {r.hub} {fmtT(r.t)}
-            {r.legs.map((l) => ` → ${l.vehicle_id} ${l.from_hub} ${fmtT(l.dep_t)} → ${l.to_hub} ${fmtT(l.arr_t)}`).join('')}
+      ) : (
+        /* ── Edge detail ── */
+        <>
+          <div className="flex flex-col gap-1">
+            <span className="self-start rounded-full px-2 py-0.5 text-[11px] font-medium text-black"
+              style={{ background: EDGE_LAYER_META[(selected.edge.kind in EDGE_LAYER_META ? selected.edge.kind : 'wait') as EdgeLayer].color }}>
+              {selected.edge.kind} edge
+            </span>
+            {selected.edge.vehicle_id && (
+              <div className="text-base font-semibold">{selected.edge.vehicle_id}</div>
+            )}
           </div>
+          <dl className="text-xs">
+            {([
+              ['Kind',     selected.edge.kind],
+              ...(selected.edge.vehicle_id ? [['Vehicle', selected.edge.vehicle_id]] : []),
+              ...(selected.edge.km        ? [['Distance', `${selected.edge.km} km`]] : []),
+              ...(selected.edge.detour !== undefined ? [['Detour', selected.edge.detour ? 'Yes' : 'No']] : []),
+            ] as [string, string][]).map(([k, v]) => (
+              <div key={k} className="flex justify-between py-2 border-b border-[var(--surface-tertiary)]">
+                <dt className="text-muted">{k}</dt><dd className="font-medium">{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="flex flex-col gap-1.5">
+            <div className="text-[11px] uppercase font-semibold tracking-wide text-[var(--subtle-foreground)]">Source node</div>
+            <NodeMiniCard node={nodeById.get(selected.edge.source)} />
+            <div className="text-[11px] uppercase font-semibold tracking-wide text-[var(--subtle-foreground)] mt-1">Target node</div>
+            <NodeMiniCard node={nodeById.get(selected.edge.target)} />
+          </div>
+        </>
+      )}
+
+      {/* Recommended paths always shown at bottom */}
+      {recs.length > 0 && (
+        <div className="flex flex-col gap-2 mt-1">
+          <div className="text-[11px] uppercase font-semibold tracking-wide text-[var(--subtle-foreground)]">Recommended paths</div>
+          {recs.map((r) => (
+            <div key={r.shipment_id} className="rounded-xl bg-[var(--dark-surface)] p-3.5 text-xs text-white flex flex-col gap-1.5">
+              <div className="font-semibold text-[var(--accent)]">{r.shipment_id} · recommended</div>
+              <div>
+                Entry {r.hub} {fmtT(r.t)}
+                {r.legs.map((l) => ` → ${l.vehicle_id} ${l.from_hub} ${fmtT(l.dep_t)} → ${l.to_hub} ${fmtT(l.arr_t)}`).join('')}
+              </div>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </aside>
+  )
+}
+
+function NodeMiniCard({ node }: { node?: { kind: string; hub: string; t: number; vehicle_id?: string } }) {
+  if (!node) return <p className="text-xs text-muted italic">Node not in current window</p>
+  return (
+    <div className="rounded-lg bg-[var(--surface-secondary)] px-2.5 py-2 text-[11px]">
+      <div className="font-medium">{node.kind} · {node.hub}</div>
+      <div className="text-muted">{fmtT(node.t)}{node.vehicle_id ? ` · ${node.vehicle_id}` : ''}</div>
+    </div>
   )
 }
