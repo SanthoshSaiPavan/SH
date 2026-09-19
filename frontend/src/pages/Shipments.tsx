@@ -1,12 +1,38 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import RecoveryModal from '../components/RecoveryModal'
 import { useEngineNow } from '../hooks/useEngineNow'
 import { useLiveData, useShipments } from '../hooks/useLiveData'
 import { PRIORITY_META, STATUS_COLORS } from '../lib/constants'
 import { parseUtc, timeLeft, title } from '../lib/format'
-import { Search } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Search } from 'lucide-react'
+import type { Shipment } from '../lib/schemas'
 import type { MapLinkState } from './MapView'
+
+type SortKey = 'id' | 'priority' | 'route' | 'vehicle' | 'deadline' | 'status'
+
+const PRIORITY_RANK = Object.keys(PRIORITY_META)
+// Most urgent first, finished last.
+const STATUS_RANK = ['misplaced', 'delayed', 'piggybacked', 'in_transit', 'at_origin', 'recovered', 'delivered']
+const DONE = ['delivered', 'recovered']
+const rank = (order: string[], v: string) => (order.includes(v) ? order.indexOf(v) : order.length)
+const text = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true })
+
+const COLUMNS: { label: string; key?: SortKey }[] = [
+  { label: 'Shipment ID', key: 'id' }, { label: 'Priority', key: 'priority' }, { label: 'Route', key: 'route' },
+  { label: 'Vehicle', key: 'vehicle' }, { label: 'Deadline', key: 'deadline' }, { label: 'Status', key: 'status' },
+  { label: 'Action' },
+]
+
+const COMPARE: Record<SortKey, (a: Shipment, b: Shipment) => number> = {
+  id: (a, b) => text(a.id, b.id),
+  priority: (a, b) => rank(PRIORITY_RANK, a.priority) - rank(PRIORITY_RANK, b.priority),
+  route: (a, b) => text(a.expected_route.join('>'), b.expected_route.join('>')),
+  vehicle: (a, b) => text(a.current_vehicle_id ?? a.current_hub_id ?? '\uffff', b.current_vehicle_id ?? b.current_hub_id ?? '\uffff'),
+  // Delivered/recovered shipments show no deadline, so they sort after every live one.
+  deadline: (a, b) => (+DONE.includes(a.status) - +DONE.includes(b.status)) || parseUtc(a.deadline).getTime() - parseUtc(b.deadline).getTime(),
+  status: (a, b) => rank(STATUS_RANK, a.status) - rank(STATUS_RANK, b.status),
+}
 
 export default function Shipments() {
   const { shipments } = useLiveData()
@@ -15,7 +41,15 @@ export default function Shipments() {
   const [q, setQ] = useState('')
   const [status, setStatus] = useState<string[]>([])
   const [selected, setSelected] = useState<string | null>(null)
-  const rows = useShipments({ q, status, priority: [] })
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 } | null>(null)
+  const filtered = useShipments({ q, status, priority: [] })
+  const rows = useMemo(() => {
+    if (!sort) return filtered
+    const cmp = COMPARE[sort.key]
+    return [...filtered].sort((a, b) => sort.dir * cmp(a, b) || text(a.id, b.id))
+  }, [filtered, sort])
+  const toggleSort = (key: SortKey) =>
+    setSort((cur) => (cur?.key === key ? { key, dir: cur.dir === 1 ? -1 : 1 } : { key, dir: 1 }))
 
   const tabs = [
     { label: 'All', value: '' },
@@ -80,13 +114,26 @@ export default function Shipments() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
-              {['Shipment ID', 'Priority', 'Route', 'Vehicle', 'Deadline', 'Status', 'Action'].map((h) => (
-                <th key={h} style={{
-                  padding: '16px 20px', textAlign: 'left',
-                  fontSize: '12px', fontWeight: 500, color: 'var(--subtle-foreground)',
-                  borderBottom: '1px solid var(--border)'
-                }}>{h}</th>
-              ))}
+              {COLUMNS.map(({ label, key }) => {
+                const active = key && sort?.key === key
+                const Icon = !active ? ArrowUpDown : sort.dir === 1 ? ArrowUp : ArrowDown
+                return (
+                  <th key={label} aria-sort={active ? (sort.dir === 1 ? 'ascending' : 'descending') : undefined} style={{
+                    padding: '16px 20px', textAlign: 'left',
+                    fontSize: '12px', fontWeight: 500, color: active ? 'var(--foreground)' : 'var(--subtle-foreground)',
+                    borderBottom: '1px solid var(--border)'
+                  }}>
+                    {key ? (
+                      <button onClick={() => toggleSort(key)} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '4px', padding: 0,
+                        background: 'none', border: 'none', font: 'inherit', color: 'inherit', cursor: 'pointer',
+                      }}>
+                        {label}<Icon size={12} style={{ opacity: active ? 1 : 0.4 }} />
+                      </button>
+                    ) : label}
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
