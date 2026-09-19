@@ -29,7 +29,7 @@ export default function Navbar() {
           borderRadius: '8px',
           display: 'grid', placeItems: 'center',
         }}>
-          <span style={{ fontSize: '14px', fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.02em' }}>Q</span>
+          <span style={{ fontSize: '13px', fontWeight: 700, color: '#FFFFFF', letterSpacing: '-0.04em' }}>PQ</span>
         </div>
         <span style={{ fontSize: '18px', fontWeight: 600, color: 'var(--foreground)', letterSpacing: '-0.03em' }}>
           PiggyIQ
