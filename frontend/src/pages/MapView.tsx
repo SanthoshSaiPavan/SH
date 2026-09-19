@@ -6,7 +6,7 @@ import Sidebar, { type Filters } from '../components/Sidebar'
 import { useLiveData, useShipments } from '../hooks/useLiveData'
 
 /** Router state other pages pass when linking here: a shipment to fly to and/or a route to highlight. */
-export type MapLinkState = { shipmentId?: string; route?: string[] }
+export type MapLinkState = { shipmentId?: string; routes?: RouteOverlay[] }
 
 export default function MapView() {
   const { hubs, vehicles, shipments, activeRecoveries } = useLiveData()
@@ -43,7 +43,7 @@ export default function MapView() {
   const linkReady = !link?.shipmentId || Boolean(shipments[link.shipmentId])
   useEffect(() => {
     if (!link || !linkReady) return
-    if (link.route) setViewRoutes([{ id: 'view', hubs: link.route, color: '#64ffda' }])
+    if (link.routes) setViewRoutes(link.routes)
     const pos = link.shipmentId ? positionOf(link.shipmentId) : null
     if (pos) setFocus(pos)
     navigate(location.pathname, { replace: true, state: null })

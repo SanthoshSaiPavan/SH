@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Package, AlertTriangle, Truck, TrendingUp, DollarSign, ArrowRight, RotateCcw } from 'lucide-react'
+import { ArrowRight, RotateCcw } from 'lucide-react'
 import AlertPanel from '../components/AlertPanel'
 import RecoveryModal from '../components/RecoveryModal'
 import ScoreGauge from '../components/ScoreGauge'
 import StatsCard from '../components/StatsCard'
 import { useEngineNow } from '../hooks/useEngineNow'
 import { useLiveData } from '../hooks/useLiveData'
-import { STRATEGY_META } from '../lib/constants'
 import { hours, inr, parseUtc, pct, time, title } from '../lib/format'
 import type { Recommendation } from '../lib/schemas'
 import type { MapLinkState } from './MapView'
@@ -51,10 +50,6 @@ export default function Dashboard() {
           <StatsCard label="Piggybacked" value={dashboard?.piggybacked_now ?? '—'} color="accent" />
           <StatsCard label="Recovery Rate" value={pct(dashboard?.recovery_rate)} hint={`${dashboard?.recoveries_in_progress ?? 0} in progress`} color="success" />
           <StatsCard label="Cost Saved Today" value={inr(dashboard?.cost_saved_today)} hint={`${inr(dashboard?.cost_saved_total)} total`} color="success" />
-          
-          <div style={{ marginTop: '16px' }}>
-            <AlertPanel alerts={alerts} onSelect={openShipment} />
-          </div>
         </div>
 
         {/* Right Column: Dark Panel (The main bento box) */}
@@ -146,11 +141,15 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <div style={{ marginTop: '24px' }}>
+        <AlertPanel alerts={alerts} onSelect={openShipment} />
+      </div>
+
       {selected && shipments[selected] && (
         <RecoveryModal
           shipment={shipments[selected]}
           onClose={() => setSelected(null)}
-          onViewRoute={(route) => showOnMap({ shipmentId: selected, route })}
+          onViewRoutes={(routes) => showOnMap({ shipmentId: selected, routes })}
         />
       )}
     </div>

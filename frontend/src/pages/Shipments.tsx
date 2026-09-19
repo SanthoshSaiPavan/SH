@@ -1,15 +1,16 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import RecoveryModal from '../components/RecoveryModal'
 import { useEngineNow } from '../hooks/useEngineNow'
 import { useLiveData, useShipments } from '../hooks/useLiveData'
 import { PRIORITY_META, STATUS_COLORS } from '../lib/constants'
 import { parseUtc, timeLeft, title } from '../lib/format'
 import { Search } from 'lucide-react'
-
-const STATUSES = ['in_transit', 'misplaced', 'piggybacked', 'recovered', 'delivered', 'delayed', 'at_origin']
+import type { MapLinkState } from './MapView'
 
 export default function Shipments() {
   const { shipments } = useLiveData()
+  const navigate = useNavigate()
   const now = useEngineNow()
   const [q, setQ] = useState('')
   const [status, setStatus] = useState<string[]>([])
@@ -174,7 +175,7 @@ export default function Shipments() {
         <RecoveryModal
           shipment={shipments[selected]}
           onClose={() => setSelected(null)}
-          onViewRoute={() => setSelected(null)}
+          onViewRoutes={(routes) => navigate('/map', { state: { shipmentId: selected, routes } satisfies MapLinkState })}
         />
       )}
     </div>

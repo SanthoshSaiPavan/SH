@@ -1,5 +1,5 @@
 /** Circular 0–100 score gauge. */
-export default function ScoreGauge({ score, size = 56, label }: { score: number; size?: number; label?: string }) {
+export default function ScoreGauge({ score, size = 56 }: { score: number; size?: number; label?: string }) {
   const r = (size - 10) / 2
   const c = 2 * Math.PI * r
   const clamped = Math.min(100, Math.max(0, score))

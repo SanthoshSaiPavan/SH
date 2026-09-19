@@ -2,9 +2,8 @@
 
 import React, { useRef, useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { LayoutDashboard, Box, Truck, Wallet, LineChart, Network } from "lucide-react";
-import { cn } from "../../lib/utils";
 
 const NAV_ITEMS = [
   { label: "Dashboard", path: "/", icon: LayoutDashboard },
@@ -17,7 +16,6 @@ const NAV_ITEMS = [
 
 export const SlideTabs = () => {
   const location = useLocation();
-  const navigate = useNavigate();
 
   // Find the index of the currently active route, default to 0 (Dashboard)
   const activeIndex = Math.max(
@@ -71,7 +69,7 @@ export const SlideTabs = () => {
         <Tab
           key={item.label}
           path={item.path}
-          ref={(el) => (tabsRef.current[i] = el)}
+          ref={(el) => { tabsRef.current[i] = el }}
           setPosition={setPosition}
         >
           <div className="flex items-center gap-2">

@@ -7,7 +7,7 @@ import { EvaluationSchema, type Evaluation, type Shipment, type Strategy } from 
 import { useAuth } from '../hooks/useAuth'
 import { useEngineNow } from '../hooks/useEngineNow'
 import { useSocket, useSocketEvent } from '../hooks/useSocket'
-import { X, Brain, ScrollText, Send, AlertTriangle, CheckCircle2, ChevronRight, Scale3D } from 'lucide-react'
+import { X, Brain, ScrollText, Send, AlertTriangle, CheckCircle2, ChevronRight } from 'lucide-react'
 import ScoreGauge, { ScoreBar } from './ScoreGauge'
 import CounterfactualSimulator from './CounterfactualSimulator'
 

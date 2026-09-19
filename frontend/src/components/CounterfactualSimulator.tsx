@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Package, Truck, Clock, AlertTriangle, CheckCircle, IndianRupee } from 'lucide-react'
 import type { Strategy, Shipment } from '../lib/schemas'
-import { inr, time, parseUtc } from '../lib/format'
+import { inr, time } from '../lib/format'
 
 interface Props {
   shipment: Shipment
@@ -10,7 +10,7 @@ interface Props {
   dedicatedCostBaseline: number
 }
 
-export default function CounterfactualSimulator({ shipment, strategies, now, dedicatedCostBaseline }: Props) {
+export default function CounterfactualSimulator({ shipment, strategies, dedicatedCostBaseline }: Props) {
   const piggyback = useMemo(
     () => strategies.find((s) => s.type === 'piggyback' && s.feasible) || strategies.find((s) => s.type === 'reroute' && s.feasible),
     [strategies]

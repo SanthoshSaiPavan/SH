@@ -1,21 +1,26 @@
 import type { Alert } from '../lib/schemas'
 import { title } from '../lib/format'
-import { Bell, AlertTriangle, AlertOctagon, AlertCircle, Info } from 'lucide-react'
+import { Bell, AlertTriangle, AlertOctagon, AlertCircle, Info, type LucideIcon } from 'lucide-react'
 
-const SEV: Record<string, { color: string; bg: string; border: string; Icon: React.FC<{ size?: number }> }> = {
+const SEV: Record<string, { color: string; bg: string; border: string; Icon: LucideIcon }> = {
   critical: { color: 'var(--destructive)', bg: 'rgba(230,57,70,0.05)', border: 'rgba(230,57,70,0.15)', Icon: AlertOctagon },
   high:     { color: '#D97B44',            bg: 'rgba(217,123,68,0.05)',  border: 'rgba(217,123,68,0.15)',  Icon: AlertTriangle },
   medium:   { color: 'var(--warning)',     bg: 'rgba(244,162,97,0.05)',  border: 'rgba(244,162,97,0.15)',  Icon: AlertCircle },
   low:      { color: 'var(--success)',     bg: 'rgba(82,183,136,0.05)', border: 'rgba(82,183,136,0.15)', Icon: Info },
 }
 
+const SEV_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 }
+const rank = (severity: string) => SEV_ORDER[severity] ?? SEV_ORDER.medium
+
 export default function AlertPanel({ alerts, onSelect }: { alerts: Alert[]; onSelect: (id: string) => void }) {
   const criticals = alerts.filter(a => a.severity === 'critical').length
+  // Most severe first; the sort is stable, so the incoming order is kept within a severity.
+  const sorted = [...alerts].sort((a, b) => rank(a.severity) - rank(b.severity))
 
   return (
     <div className="card" style={{
       display: 'flex', flexDirection: 'column',
-      height: '100%', overflow: 'hidden',
+      overflow: 'hidden',
       border: '1px solid rgba(0,0,0,0.03)',
     }}>
       {/* Header */}
@@ -46,10 +51,10 @@ export default function AlertPanel({ alerts, onSelect }: { alerts: Alert[]; onSe
       </div>
 
       {/* List */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '12px', padding: '12px' }}>
         {alerts.length === 0 && (
           <div style={{
-            height: '100%', display: 'flex', flexDirection: 'column',
+            gridColumn: '1 / -1', display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: '8px',
             color: 'var(--subtle-foreground)', fontSize: '13px', padding: '20px'
           }}>
@@ -57,7 +62,7 @@ export default function AlertPanel({ alerts, onSelect }: { alerts: Alert[]; onSe
             <span>No alerts detected</span>
           </div>
         )}
-        {alerts.map((a) => {
+        {sorted.map((a) => {
           const s = SEV[a.severity] ?? SEV.medium
           const Icon = s.Icon
           return (
@@ -68,7 +73,6 @@ export default function AlertPanel({ alerts, onSelect }: { alerts: Alert[]; onSe
               style={{
                 width: '100%', textAlign: 'left',
                 padding: '12px 16px',
-                marginBottom: '8px',
                 borderRadius: '12px',
                 background: s.bg,
                 border: `1px solid ${s.border}`,
