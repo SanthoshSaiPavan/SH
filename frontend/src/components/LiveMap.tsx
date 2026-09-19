@@ -2,7 +2,7 @@ import maplibregl from '../lib/maplibre'
 import type { Feature, FeatureCollection, LineString } from 'geojson'
 import type { GeoJSONSource, Map as MLMap } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ensureRoadPaths, hubLine, hubPairs } from '../lib/roads'
 import { CONNECTION_COLORS, MAP_CONFIG, MARKER_ANIMATION_MS, PRIORITY_META } from '../lib/constants'
 import type { Hub, Shipment, Vehicle } from '../lib/schemas'
@@ -213,19 +213,43 @@ export default function LiveMap({ hubs, vehicles, shipments, routes = [], showPl
   return (
     <div className={`relative ${className ?? ''}`}>
       <div ref={container} className="w-full h-full rounded-2xl overflow-hidden" />
-      <div className="absolute left-3 bottom-3 glass px-3 py-2 text-[11px] text-muted space-y-1 pointer-events-none">
-        <div className="flex gap-3">
-          <span>🏢 hub</span><span>🚚 vehicle</span><span>📦 misplaced</span>
-          <span><span style={{ color: '#10b981' }}>●</span> live</span>
-          <span><span style={{ color: '#f59e0b' }}>●</span> delayed</span>
-          <span><span style={{ color: '#ef4444' }}>●</span> offline</span>
-        </div>
-        <div className="flex gap-3">
-          <span><span style={{ color: '#6366f1' }}>- - -</span> planned route</span>
-          <span><span style={{ color: '#a855f7' }}>━━</span> recovery route</span>
-        </div>
-      </div>
     </div>
+  )
+}
+
+const LEGEND: { label: string; items: { swatch: ReactNode; label: string }[] }[] = [
+  { label: 'Markers', items: [
+    { swatch: '🏢', label: 'Hub' }, { swatch: '🚚', label: 'Vehicle' }, { swatch: '📦', label: 'Misplaced shipment' },
+  ] },
+  { label: 'Vehicle status', items: [
+    { swatch: <span style={{ color: '#10b981' }}>●</span>, label: 'Live' },
+    { swatch: <span style={{ color: '#f59e0b' }}>●</span>, label: 'Delayed' },
+    { swatch: <span style={{ color: '#ef4444' }}>●</span>, label: 'Offline' },
+  ] },
+  { label: 'Routes', items: [
+    { swatch: <span style={{ color: '#6366f1' }}>- - -</span>, label: 'Planned route' },
+    { swatch: <span style={{ color: '#a855f7' }}>━━</span>, label: 'Recovery route' },
+  ] },
+]
+
+/** Map key, rendered beside the map rather than over it. */
+export function MapLegend() {
+  return (
+    <aside className="w-48 shrink-0 card p-4 space-y-3 self-start sticky top-20">
+      <div className="text-xs uppercase tracking-wide text-muted font-semibold">Legend</div>
+      {LEGEND.map((g) => (
+        <div key={g.label} className="border border-border rounded-lg p-3">
+          <div className="text-sm font-semibold mb-2">{g.label}</div>
+          <div className="space-y-1">
+            {g.items.map((i) => (
+              <div key={i.label} className="flex items-center gap-2 text-xs text-muted">
+                <span className="w-8 shrink-0 text-center">{i.swatch}</span>{i.label}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </aside>
   )
 }
 
