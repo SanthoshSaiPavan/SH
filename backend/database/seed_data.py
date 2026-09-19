@@ -74,11 +74,32 @@ NATIONAL_VEHICLES = [
 
 # Module 7 demo trucks on RT-09. TRUCK-102 approaches Warangal with 35% free
 # capacity (the first recommendation); TRUCK-104 follows as the fallback.
+# TRUCK-105..110 (approved) fill the corridor in both directions so the demo
+# graph stays busy; the forward ones are already past Warangal, so SHP-501's
+# TRUCK-102/104 story is unchanged. TRUCK-107/110 start at Vijayawada (stop 0)
+# for the shipments stranded there; TRUCK-107 is hazmat-certified for SHP-505.
+# (id, reversed, stop_index, progress to next stop, used fraction, hazmat)
 DEMO_TRUCKS = [
-    ("TRUCK-101", False, 2, 0.35, 0.60),
-    ("TRUCK-102", False, 1, 0.45, 0.65),
-    ("TRUCK-103", True, 1, 0.50, 0.50),
-    ("TRUCK-104", False, 1, 0.10, 0.40),
+    ("TRUCK-101", False, 2, 0.35, 0.60, []),
+    ("TRUCK-102", False, 1, 0.45, 0.65, []),
+    ("TRUCK-103", True, 1, 0.50, 0.50, []),
+    ("TRUCK-104", False, 1, 0.10, 0.40, []),
+    ("TRUCK-105", False, 2, 0.70, 0.50, []),
+    ("TRUCK-106", True, 1, 0.20, 0.45, []),
+    ("TRUCK-107", True, 0, 0.0, 0.30, ["hazmat_class_3"]),
+    ("TRUCK-108", False, 2, 0.20, 0.85, []),
+    ("TRUCK-109", True, 2, 0.60, 0.40, []),
+    ("TRUCK-110", True, 0, 0.0, 0.55, []),
+]
+
+# Extra scripted wrong-hub shipments in the RT-09 corridor (approved), so the
+# demo shows several recoveries at once.
+# (id, origin, destination, current hub, priority, flags, kg, deadline hours)
+DEMO_MISPLACED = [
+    ("SHP-502", "HUB-VJA-01", "HUB-HYD-01", "HUB-WGL-01", "medium", [], 80, 14),
+    ("SHP-503", "HUB-HYD-01", "HUB-VJA-01", "HUB-WGL-01", "high", [], 45, 8),
+    ("SHP-504", "HUB-WGL-01", "HUB-HYD-01", "HUB-VJA-01", "low", ["fragile"], 150, 20),
+    ("SHP-505", "HUB-HYD-01", "HUB-WGL-01", "HUB-VJA-01", "high", ["hazmat_class_3"], 200, 12),
 ]
 
 USERS = [  # username, password, role, vehicle_id
@@ -149,8 +170,8 @@ def build_seed():
 
     for vid, vtype, rid, rev, idx, prog, used, hazmat in NATIONAL_VEHICLES:
         make_vehicle(vid, vtype, rid, rev, idx, prog, used, hazmat, rng.choice(CARRIERS))
-    for vid, rev, idx, prog, used in DEMO_TRUCKS:
-        make_vehicle(vid, "truck", "RT-09", rev, idx, prog, used, [], "Deccan Roadways")
+    for vid, rev, idx, prog, used, hazmat in DEMO_TRUCKS:
+        make_vehicle(vid, "truck", "RT-09", rev, idx, prog, used, hazmat, "Deccan Roadways")
     vehicles["TRUCK-102"].speed_kmh = 60
 
     shipments = _build_shipments(rng, now, hubs, vehicles)
@@ -190,7 +211,7 @@ def carried_shipment(rng, now, hubs, v, origin_idx: int, shipment_id: str, track
 
 
 def _build_shipments(rng, now, hubs, vehicles):
-    """30 in-transit shipments riding national vehicles, plus scripted SHP-501."""
+    """30 in-transit shipments riding national vehicles, plus scripted SHP-501..505."""
     priorities = list(PRIORITY_MIX)
     rng.shuffle(priorities)
     carriers = [v for v in vehicles.values() if not v.id.startswith("TRUCK-")]
@@ -212,6 +233,16 @@ def _build_shipments(rng, now, hubs, vehicles):
         deadline=now + timedelta(hours=10), current_lat=wgl.lat, current_lng=wgl.lng,
         current_vehicle_id=None, last_scan_at=now - timedelta(minutes=20),
     ))
+    for sid, origin, dest, at, priority, flags, kg, deadline_h in DEMO_MISPLACED:
+        hub = hubs[at]
+        shipments.append(Shipment(
+            id=sid, tracking_number=f"PGS-DEMO-{sid[4:]}", origin_hub_id=origin,
+            destination_hub_id=dest, current_hub_id=at, expected_route=[origin, dest],
+            actual_route=[origin, at], status="in_transit", priority=priority,
+            handling_flags=flags, weight_kg=kg, volume_cbm=round(kg / 200, 2),
+            deadline=now + timedelta(hours=deadline_h), current_lat=hub.lat, current_lng=hub.lng,
+            current_vehicle_id=None, last_scan_at=now - timedelta(minutes=20),
+        ))
     return shipments
 
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { z } from 'zod'
 import { useNavigate } from 'react-router-dom'
+import { z } from 'zod'
 import RecoveryModal from '../components/RecoveryModal'
 import ShipmentCard from '../components/ShipmentCard'
 import { useEngineNow } from '../hooks/useEngineNow'
@@ -9,13 +9,14 @@ import { api } from '../lib/api'
 import { STRATEGY_META } from '../lib/constants'
 import { inr, time, title } from '../lib/format'
 import { ActionSchema, type RecoveryAction } from '../lib/schemas'
+import type { MapLinkState } from './MapView'
 
 export default function Recovery() {
   const { shipments, recommendations, progress, activeRecoveries } = useLiveData()
+  const navigate = useNavigate()
   const now = useEngineNow()
   const [selected, setSelected] = useState<string | null>(null)
   const [history, setHistory] = useState<RecoveryAction[]>([])
-  const navigate = useNavigate()
 
   // History is loaded on page entry and whenever the set of active recoveries changes.
   useEffect(() => {
@@ -64,7 +65,7 @@ export default function Recovery() {
         </div>
       </section>
       {selected && shipments[selected] && (
-        <RecoveryModal shipment={shipments[selected]} onClose={() => setSelected(null)} onViewRoutes={(routes) => { setSelected(null); navigate('/map', { state: { shipmentId: selected, route: routes[0]?.hubs } }) }} />
+        <RecoveryModal shipment={shipments[selected]} onClose={() => setSelected(null)} onViewRoutes={(routes) => navigate('/map', { state: { shipmentId: selected, routes } satisfies MapLinkState })} />
       )}
     </div>
   )

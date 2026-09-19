@@ -48,6 +48,8 @@ HANDLING_BUFFER_MINUTES = 30  # ASSUMPTION: must be at hub this long before a le
 HUB_DWELL_MINUTES = 30  # ASSUMPTION: vehicle stop duration at each hub
 GRAPH_HORIZON_HOURS = 72  # ASSUMPTION: ignore legs departing further out than this
 MAX_DETOUR_KM = 40.0  # ASSUMPTION: vehicles may detour to an off-route hub this close to a leg
+GRAPH_VIEW_DEMO_ROUTE = "RT-09"  # ASSUMPTION: route shown by the 3D graph view's demo switch
+GRAPH_VIEW_DEFAULT_HOURS = 24  # ASSUMPTION: default time window sent to the 3D graph view
 # Medium-tier weighted objective converts time to ₹ so cost and time share a unit.
 VALUE_OF_TIME_PER_HOUR = 150.0  # ASSUMPTION
 

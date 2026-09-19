@@ -50,10 +50,6 @@ export default function Dashboard() {
           <StatsCard label="Piggybacked" value={dashboard?.piggybacked_now ?? '—'} color="accent" />
           <StatsCard label="Recovery Rate" value={pct(dashboard?.recovery_rate)} hint={`${dashboard?.recoveries_in_progress ?? 0} in progress`} color="success" />
           <StatsCard label="Cost Saved Today" value={inr(dashboard?.cost_saved_today)} hint={`${inr(dashboard?.cost_saved_total)} total`} color="success" />
-          
-          <div style={{ marginTop: '16px' }}>
-            <AlertPanel alerts={alerts} onSelect={openShipment} />
-          </div>
         </div>
 
         {/* Right Column: Dark Panel (The main bento box) */}
@@ -145,11 +141,15 @@ export default function Dashboard() {
         </div>
       </div>
 
+      <div style={{ marginTop: '24px' }}>
+        <AlertPanel alerts={alerts} onSelect={openShipment} />
+      </div>
+
       {selected && shipments[selected] && (
         <RecoveryModal
           shipment={shipments[selected]}
           onClose={() => setSelected(null)}
-          onViewRoutes={(routes) => showOnMap({ shipmentId: selected, route: routes[0]?.hubs })}
+          onViewRoutes={(routes) => showOnMap({ shipmentId: selected, routes })}
         />
       )}
     </div>

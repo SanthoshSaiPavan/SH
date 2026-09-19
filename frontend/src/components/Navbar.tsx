@@ -1,14 +1,11 @@
-import { NavLink } from 'react-router-dom'
-import { motion } from 'framer-motion'
 import { useLiveData } from '../hooks/useLiveData'
-import { useSocket } from '../hooks/useSocket'
 import { time } from '../lib/format'
+import ModeToggle from './ModeToggle'
 import UserMenu from './UserMenu'
-import { Bell, BellOff, LayoutDashboard, Box, Truck, Wallet, LineChart } from 'lucide-react'
+import { Bell, BellOff } from 'lucide-react'
 import { SlideTabs } from './ui/slide-tabs'
 
 export default function Navbar() {
-  const { connected } = useSocket()
   const { sim, muted, setMuted } = useLiveData()
 
   return (
@@ -44,6 +41,7 @@ export default function Navbar() {
 
       {/* Right side */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <ModeToggle />
         {sim && (
           <span style={{
             fontSize: '12px',

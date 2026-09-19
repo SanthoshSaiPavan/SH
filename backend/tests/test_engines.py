@@ -7,6 +7,7 @@ import config
 from database.seed_data import build_seed
 from engines import anomaly_detector as ad
 from engines import graph_network as gn
+from engines import graph_view
 from engines import piggyback_matcher as pm
 from engines import recovery_engine as re_
 from utils import clock
@@ -49,9 +50,10 @@ def test_scoring_helpers():
 
 
 # ---- Module 1 ------------------------------------------------------------------
-def test_seed_only_flags_scripted_shipment(world):
+def test_seed_only_flags_scripted_shipments(world):
     results = ad.detect_anomalies(world["shipments"].values(), world["hubs"], world["now"])
-    assert [(r.shipment_id, r.misplacement_type) for r in results] == [("SHP-501", "wrong_hub")]
+    assert sorted((r.shipment_id, r.misplacement_type) for r in results) == [
+        (f"SHP-50{i}", "wrong_hub") for i in range(1, 6)]
 
 
 def test_scan_gap_flags_idle_shipment_at_hub(world):
@@ -217,3 +219,39 @@ def test_simulator_follows_the_road(world):
         assert off_road < 0.5
     wgl = world["hubs"]["HUB-WGL-01"]
     assert haversine(v.current_lat, v.current_lng, wgl.lat, wgl.lng) < 2  # reached Warangal
+
+
+# ---- 3D graph view -----------------------------------------------------------
+def test_graph_view_demo_keeps_only_route(world):
+    g = graph_for(world)
+    route = next(r for r in world["routes"] if r.id == config.GRAPH_VIEW_DEMO_ROUTE)
+    out = graph_view.serialize(g, world["hubs"], 24, route=route)
+    ids = {n["id"] for n in out["nodes"]}
+    assert out["nodes"] and all(e["source"] in ids and e["target"] in ids for e in out["edges"])
+    vehicles = {n["vehicle_id"] for n in out["nodes"] if "vehicle_id" in n}
+    assert vehicles and all(world["vehicles"][v].route_id == route.id for v in vehicles)
+    assert {h["id"] for h in out["hubs"]} >= set(route.hub_sequence)
+    assert all(0 <= n["t"] <= 24 for n in out["nodes"])
+
+
+def test_graph_view_live_includes_every_leg_in_window(world):
+    g = graph_for(world)
+    out = graph_view.serialize(g, world["hubs"], config.GRAPH_HORIZON_HOURS)
+    legs = [e for e in out["edges"] if e["kind"] == "leg"]
+    assert len(legs) == sum(1 for *_, d in g.edges(data=True) if d["kind"] == "leg")
+
+
+def test_demo_misplaced_shipments_have_corridor_candidates(world):
+    g = graph_for(world)
+    for sid in ("SHP-502", "SHP-503", "SHP-504", "SHP-505"):
+        s = world["shipments"][sid]
+        candidates = pm.find_piggyback_matches(s, g, world["now"])
+        assert candidates, sid
+        assert all(world["vehicles"][c.vehicle_id].route_id == "RT-09" for c in candidates), sid
+
+
+def test_hazmat_demo_shipment_only_matches_certified_truck(world):
+    s = world["shipments"]["SHP-505"]
+    candidates = pm.find_piggyback_matches(s, graph_for(world), world["now"])
+    assert candidates and all("hazmat_class_3" in world["vehicles"][c.vehicle_id].hazmat_certifications
+                              for c in candidates)

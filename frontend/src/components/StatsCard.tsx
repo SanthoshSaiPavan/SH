@@ -8,7 +8,7 @@ type Props = {
   icon?: React.ReactNode
 }
 
-export default function StatsCard({ label, value, hint, color = 'default', icon }: Props) {
+export default function StatsCard({ label, value, hint }: Props) {
   return (
     <div className="card" style={{
       padding: '16px 20px',

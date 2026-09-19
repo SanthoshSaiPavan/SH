@@ -119,3 +119,26 @@ export const AlertSchema = z.object({
   message: z.string(), priority: z.string().optional(), severity_score: z.number().optional(),
 })
 export type Alert = z.infer<typeof AlertSchema> & { at: number }
+
+// ---- Time-expanded graph snapshot (GET /api/graph) ----
+export const GraphNodeSchema = z.object({
+  id: z.string(), kind: z.enum(['hub', 'arr', 'dep']), hub: z.string(), t: z.number(),
+  vehicle_id: z.string().optional(), variant: z.string().optional(),
+  remaining_kg: z.number().optional(), total_kg: z.number().optional(),
+})
+export type GraphNode = z.infer<typeof GraphNodeSchema>
+
+export const GraphSnapshotSchema = z.object({
+  now: z.string(), hours: z.number(), route_id: z.string().nullable(),
+  hubs: z.array(z.object({ id: z.string(), name: z.string(), lat: z.number(), lng: z.number() })),
+  nodes: z.array(GraphNodeSchema),
+  edges: z.array(z.object({
+    source: z.string(), target: z.string(), kind: z.string(),
+    vehicle_id: z.string().optional(), km: z.number().optional(), detour: z.boolean().optional(),
+  })),
+  recommendations: z.array(z.object({
+    shipment_id: z.string(), hub: z.string().nullable(), t: z.number(),
+    legs: z.array(z.object({ vehicle_id: z.string(), from_hub: z.string(), to_hub: z.string(), dep_t: z.number(), arr_t: z.number() })),
+  })),
+})
+export type GraphSnapshot = z.infer<typeof GraphSnapshotSchema>
