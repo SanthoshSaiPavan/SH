@@ -11,7 +11,6 @@ import { useAuth } from './useAuth'
 import { useSocket, useSocketEvent } from './useSocket'
 
 export type Progress = { percent_complete: number; eta?: string }
-export type Toast = { id: number; kind: 'success' | 'info' | 'danger'; text: string }
 
 type LiveData = {
   hubs: Record<string, Hub>
@@ -23,10 +22,8 @@ type LiveData = {
   alerts: Alert[]
   dashboard: Dashboard | null
   sim: SimStatus | null
-  toasts: Toast[]
   muted: boolean
   setMuted: (m: boolean) => void
-  dismissToast: (id: number) => void
   refreshShipment: (id: string) => Promise<void>
   refreshSim: () => Promise<void>
   refreshAll: () => Promise<void>
@@ -64,16 +61,9 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [sim, setSim] = useState<SimStatus | null>(null)
-  const [toasts, setToasts] = useState<Toast[]>([])
   const [muted, setMuted] = useState(false)
   const mutedRef = useRef(muted)
   useEffect(() => { mutedRef.current = muted }, [muted])
-
-  const toast = useCallback((kind: Toast['kind'], text: string) => {
-    const id = Date.now() + Math.random()
-    setToasts((t) => [...t.slice(-3), { id, kind, text }])
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 6000)
-  }, [])
 
   const refreshShipment = useCallback(async (id: string) => {
     const s = await api.get(`/api/shipments/${id}`, ShipmentSchema)
@@ -115,8 +105,8 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isOperator) return
-    refreshAll().catch((err) => toast('danger', `Failed to load data: ${err.message}`))
-  }, [isOperator, connectionId, refreshAll, toast])
+    refreshAll().catch((err) => console.error('Failed to load data:', err))
+  }, [isOperator, connectionId, refreshAll])
 
   useSocketEvent<LiveState>('vehicle:location:update', (raw) => {
     const loc = LiveStateSchema.safeParse(raw)
@@ -162,9 +152,6 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
     const rec = RecommendationSchema.safeParse(raw)
     if (!rec.success) return
     setRecommendations((r) => ({ ...r, [rec.data.shipment_id]: rec.data }))
-    if (rec.data.reason && rec.data.reason !== 'initial recommendation') {
-      toast('info', `${rec.data.shipment_id}: ${rec.data.reason}`)
-    }
   })
 
   useSocketEvent<{ shipment_id: string; strategy: string; vehicle_id: string | null; system_initiated?: boolean }>(
@@ -173,7 +160,6 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
         const { [d.shipment_id]: _removed, ...rest } = r
         return rest
       })
-      toast('info', `${d.system_initiated ? 'Auto-executed' : 'Recovery started'}: ${d.shipment_id} → ${d.strategy}${d.vehicle_id ? ` on ${d.vehicle_id}` : ''}`)
       refreshShipment(d.shipment_id).catch(() => undefined)
       refreshActive().catch(() => undefined)
       refreshDashboard().catch(() => undefined)
@@ -187,7 +173,6 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
 
   useSocketEvent<{ shipment_id: string; cost_saved: number; time_taken: number }>('recovery:completed', (d) => {
     if (!mutedRef.current) beep(1040)
-    toast('success', `${d.shipment_id} recovered — saved ₹${Math.round(d.cost_saved).toLocaleString('en-IN')}`)
     setProgress((p) => ({ ...p, [d.shipment_id]: { percent_complete: 100 } }))
     refreshShipment(d.shipment_id).catch(() => undefined)
     refreshActive().catch(() => undefined)
@@ -201,10 +186,9 @@ export function LiveDataProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<LiveData>(() => ({
     hubs, vehicles, shipments, recommendations, activeRecoveries, progress, alerts, dashboard, sim,
-    toasts, muted, setMuted, refreshShipment, refreshSim, refreshAll,
-    dismissToast: (id: number) => setToasts((t) => t.filter((x) => x.id !== id)),
+    muted, setMuted, refreshShipment, refreshSim, refreshAll,
   }), [hubs, vehicles, shipments, recommendations, activeRecoveries, progress, alerts, dashboard,
-    sim, toasts, muted, refreshShipment, refreshSim, refreshAll])
+    sim, muted, refreshShipment, refreshSim, refreshAll])
 
   return <LiveDataContext.Provider value={value}>{children}</LiveDataContext.Provider>
 }
