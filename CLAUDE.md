@@ -28,7 +28,8 @@ run everything from `backend/` (pytest.ini sets `pythonpath = .`).
 - Module 3 uses per-tier weight sets (`config.STRATEGY_WEIGHTS`) instead of the plan's additive `0.20 × priority_multiplier`.
 - Schema additions: `vehicles.hazmat_certifications`, `vehicles.fleet_id`, `shipments.last_scan_at`, `users` table,
   plus `shipments.current_vehicle_id` (normal carriage assignment).
-- Seed = the plan's 15 national hubs + HUB-WGL-01/HUB-VJA-01 + route RT-09 for the TRUCK-101..104 / SHP-501 demo.
+- Seed = the plan's 15 national hubs + HUB-WGL-01/HUB-VJA-01 + route RT-09 for the TRUCK-101..110 / SHP-501..505 demo
+  (TRUCK-102 then TRUCK-104 must stay SHP-501's top two candidates; `test_demo_piggyback_candidates` guards it).
 - The user wants to be asked before any feature is added beyond the plan.
 
 ## Architecture

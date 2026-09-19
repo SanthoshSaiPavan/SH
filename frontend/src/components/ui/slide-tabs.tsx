@@ -3,7 +3,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useLocation, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Box, Truck, Wallet, LineChart } from "lucide-react";
+import { LayoutDashboard, Box, Truck, Wallet, LineChart, Network } from "lucide-react";
 import { cn } from "../../lib/utils";
 
 const NAV_ITEMS = [
@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { label: "Shipments", path: "/shipments", icon: Truck },
   { label: "Recovery", path: "/recovery", icon: Wallet },
   { label: "Analytics", path: "/analytics", icon: LineChart },
+  { label: "Graph 3D", path: "/graph", icon: Network },
 ];
 
 export const SlideTabs = () => {

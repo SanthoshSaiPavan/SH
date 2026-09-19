@@ -17,7 +17,7 @@ from engines.simulation import engine_loop
 from realtime.location_service import location_service
 from realtime.recommendation_loop import recommendation_loop
 from realtime.socket_server import sio
-from routes import agent, analytics, auth, recovery, shipments, simulation, vehicles
+from routes import agent, analytics, auth, graph, recovery, shipments, simulation, vehicles
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -40,7 +40,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="PiggyShip API", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=config.CORS_ORIGINS, allow_credentials=True,
                    allow_methods=["*"], allow_headers=["*"])
-for module in (auth, shipments, vehicles, recovery, analytics, simulation, agent):
+for module in (auth, shipments, vehicles, recovery, analytics, simulation, agent, graph):
     app.include_router(module.router)
 
 

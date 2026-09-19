@@ -190,3 +190,9 @@ select.input { cursor: pointer; border-radius: var(--radius-md); }
   to   { opacity: 1; transform: translateY(0); }
 }
 .animate-slide-in { animation: enter-down 180ms ease-out both; }
+
+/* 3D graph view labels (CSS2DRenderer) */
+.graph3d-label { font-size: 11px; pointer-events: none; white-space: nowrap; }
+.graph3d-hub { color: #FFFFFF; font-weight: 600; }
+.graph3d-tick { color: var(--dark-subtle); }
+.graph3d-entry { color: var(--destructive); font-weight: 500; }
