@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Navbar from './components/Navbar'
-import Toasts from './components/Toasts'
 import UserMenu from './components/UserMenu'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { LiveDataProvider } from './hooks/useLiveData'
@@ -34,7 +33,6 @@ function OperatorShell({ children }: { children: ReactNode }) {
     <div className="min-h-full flex flex-col">
       <Navbar />
       <main className="flex-1 overflow-y-auto overflow-x-hidden relative bg-[var(--background)]">{children}</main>
-      <Toasts />
     </div>
   )
 }

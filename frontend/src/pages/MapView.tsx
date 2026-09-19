@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import LiveMap, { shipmentPosition, type RouteOverlay } from '../components/LiveMap'
+import LiveMap, { MapLegend, shipmentPosition, type RouteOverlay } from '../components/LiveMap'
 import RecoveryModal from '../components/RecoveryModal'
 import Sidebar, { type Filters } from '../components/Sidebar'
 import { useLiveData, useShipments } from '../hooks/useLiveData'
@@ -57,6 +57,7 @@ export default function MapView() {
           onShipmentClick={openShipment} focus={focus} />
         {viewRoutes && <button className="btn self-start" onClick={() => setViewRoutes(null)}>Clear highlighted route(s)</button>}
       </div>
+      <MapLegend />
       {selected && shipments[selected] && (
         <RecoveryModal shipment={shipments[selected]} onClose={() => setSelected(null)}
           onViewRoutes={(r) => { setViewRoutes(r); setSelected(null) }} />
