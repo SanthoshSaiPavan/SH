@@ -1,9 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#0a0e1a"/>
-  <rect x="22" y="10" width="20" height="16" rx="2" fill="#a855f7"/>
-  <path d="M22 18h20" stroke="#0a0e1a" stroke-width="2"/>
-  <rect x="8" y="28" width="32" height="16" rx="2" fill="#6366f1"/>
-  <path d="M40 32h8l8 7v5H40z" fill="#6366f1"/>
-  <circle cx="18" cy="48" r="5" fill="#10b981"/>
-  <circle cx="46" cy="48" r="5" fill="#10b981"/>
+  <rect width="64" height="64" rx="14" fill="#18181A"/>
+  <text x="32" y="33" text-anchor="middle" dominant-baseline="central" fill="#D2D88F"
+    font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="30" font-weight="800" letter-spacing="-1">PQ</text>
 </svg>
