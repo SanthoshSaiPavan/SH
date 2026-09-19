@@ -196,3 +196,4 @@ select.input { cursor: pointer; border-radius: var(--radius-md); }
 .graph3d-hub { color: #FFFFFF; font-weight: 600; }
 .graph3d-tick { color: var(--dark-subtle); }
 .graph3d-entry { color: var(--destructive); font-weight: 500; }
+.graph3d-sink { color: #FFD166; font-weight: 500; }

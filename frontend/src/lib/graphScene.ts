@@ -1,42 +1,49 @@
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js'
-import type { GraphNode, GraphSnapshot } from './schemas'
+import type { GraphEdge, GraphNode, GraphSnapshot } from './schemas'
 
 export type EdgeLayer = 'leg' | 'wait' | 'board' | 'unload' | 'onboard' | 'detour'
 export type CameraPreset = '3d' | 'top' | 'side'
 
+// Unified selection — either a node or an edge was clicked.
+export type Selection =
+  | { kind: 'node'; node: GraphNode }
+  | { kind: 'edge'; edge: GraphEdge }
+  | null
+
 export const EDGE_LAYER_META: Record<EdgeLayer, { label: string; color: string }> = {
-  leg: { label: 'Vehicle leg', color: '#457B9D' },
-  wait: { label: 'Wait (hub timeline)', color: '#A1A1AA' },
-  board: { label: 'Board', color: '#52B788' },
-  unload: { label: 'Unload', color: '#F4A261' },
-  onboard: { label: 'Stay onboard', color: '#6366F1' },
-  detour: { label: 'Detour variants', color: '#E63946' },
+  leg:     { label: 'Vehicle leg',       color: '#457B9D' },
+  wait:    { label: 'Wait (hub timeline)', color: '#A1A1AA' },
+  board:   { label: 'Board',             color: '#52B788' },
+  unload:  { label: 'Unload',            color: '#F4A261' },
+  onboard: { label: 'Stay onboard',      color: '#6366F1' },
+  detour:  { label: 'Detour variants',   color: '#E63946' },
 }
 
 /** Per-vehicle leg colours, cycled by vehicle order. */
 const VEHICLE_COLORS = ['#457B9D', '#52B788', '#F4A261', '#A78BFA', '#4CC9F0', '#F28482', '#E9C46A', '#90BE6D']
-const BG = '#18181A'
-const PATH_COLOR = '#D2D88F'
+const BG          = '#18181A'
+const PATH_COLOR  = '#D2D88F'
 const ENTRY_COLOR = '#E63946'
-const FLOOR_EXTENT = 20 // world units the hub layout is scaled to
-const TIME_HEIGHT = 14 // world units for the whole time window
+const FLOOR_EXTENT = 20
+const TIME_HEIGHT  = 14
 
 const CAMERA_POSES: Record<CameraPreset, [number, number, number]> = {
-  '3d': [22, 18, 22],
-  top: [0.01, 36, 0.01],
-  side: [0, 7, 34],
+  '3d':  [22, 18, 22],
+  top:   [0.01, 36, 0.01],
+  side:  [0, 7, 34],
 }
 
-type Pickable = { mesh: THREE.InstancedMesh; nodes: GraphNode[] }
+type NodePickable = { mesh: THREE.InstancedMesh; nodes: GraphNode[] }
+type EdgePickable = { obj: THREE.LineSegments; edges: GraphEdge[] }
 
 export type GraphScene = {
-  update: (snap: GraphSnapshot, layers: Record<EdgeLayer, boolean>) => void
+  update:    (snap: GraphSnapshot, layers: Record<EdgeLayer, boolean>) => void
   setLayers: (layers: Record<EdgeLayer, boolean>) => void
   setCamera: (preset: CameraPreset) => void
-  select: (id: string | null) => void
-  dispose: () => void
+  select:    (id: string | null) => void
+  dispose:   () => void
 }
 
 const isDetour = (n: GraphNode | undefined) => !!n?.variant && n.variant !== 'main'
@@ -59,7 +66,10 @@ function disposeTree(obj: THREE.Object3D) {
   })
 }
 
-export function createGraphScene(container: HTMLElement, onSelect: (node: GraphNode | null) => void): GraphScene {
+export function createGraphScene(
+  container: HTMLElement,
+  onSelect: (sel: Selection) => void,
+): GraphScene {
   const renderer = new THREE.WebGLRenderer({ antialias: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setClearColor(BG)
@@ -90,9 +100,10 @@ export function createGraphScene(container: HTMLElement, onSelect: (node: GraphN
   scene.add(content)
   const edgeObjects: Partial<Record<EdgeLayer, THREE.Object3D>> = {}
   let detourNodes: THREE.Object3D | null = null
-  let pickables: Pickable[] = []
+  let nodePickables: NodePickable[] = []
+  let edgePickables: EdgePickable[] = []
   let positions = new Map<string, THREE.Vector3>()
-  let byId = new Map<string, GraphNode>()
+  let byId     = new Map<string, GraphNode>()
 
   const ring = new THREE.Mesh(
     new THREE.TorusGeometry(0.42, 0.05, 8, 32),
@@ -127,21 +138,47 @@ export function createGraphScene(container: HTMLElement, onSelect: (node: GraphN
   }
   tick()
 
-  // Click (not drag) selects the nearest node under the pointer.
+  // ── Click / Selection ──────────────────────────────────────────
   const raycaster = new THREE.Raycaster()
+  raycaster.params.Line = { threshold: 0.25 }   // world-units tolerance for edge picking
   const down = new THREE.Vector2()
+
   const onDown = (e: PointerEvent) => down.set(e.clientX, e.clientY)
   const onUp = (e: PointerEvent) => {
     if (down.distanceTo(new THREE.Vector2(e.clientX, e.clientY)) > 4) return
     const rect = renderer.domElement.getBoundingClientRect()
-    const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1)
+    const ndc = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1,
+    )
     raycaster.setFromCamera(ndc, camera)
-    const visible = pickables.filter((p) => p.mesh.visible && p.mesh.parent?.visible !== false)
-    const hit = raycaster.intersectObjects(visible.map((p) => p.mesh), false)[0]
-    const owner = hit && visible.find((p) => p.mesh === hit.object)
-    const node = owner && hit.instanceId !== undefined ? owner.nodes[hit.instanceId] : null
-    select(node?.id ?? null)
-    onSelect(node ?? null)
+
+    // 1. Try node picks
+    const visibleNodes = nodePickables.filter((p) => p.mesh.visible && p.mesh.parent?.visible !== false)
+    const nodeHit = raycaster.intersectObjects(visibleNodes.map((p) => p.mesh), false)[0]
+    const nodeOwner = nodeHit && visibleNodes.find((p) => p.mesh === nodeHit.object)
+    const hitNode = nodeOwner && nodeHit.instanceId !== undefined ? nodeOwner.nodes[nodeHit.instanceId] : null
+
+    // 2. Try edge picks
+    const visibleEdges = edgePickables.filter((ep) => ep.obj.visible && ep.obj.parent?.visible !== false)
+    const edgeHit = raycaster.intersectObjects(visibleEdges.map((ep) => ep.obj), false)[0]
+    const edgeOwner = edgeHit && visibleEdges.find((ep) => ep.obj === edgeHit.object)
+    const hitEdge = edgeOwner && edgeHit.faceIndex != null ? edgeOwner.edges[edgeHit.faceIndex] : null
+
+    // 3. Pick whichever is closer; nodes win ties
+    let sel: Selection = null
+    if (hitNode && hitEdge) {
+      sel = nodeHit!.distance <= edgeHit!.distance
+        ? { kind: 'node', node: hitNode }
+        : { kind: 'edge', edge: hitEdge }
+    } else if (hitNode) {
+      sel = { kind: 'node', node: hitNode }
+    } else if (hitEdge) {
+      sel = { kind: 'edge', edge: hitEdge }
+    }
+
+    select(sel?.kind === 'node' ? sel.node.id : null)
+    onSelect(sel)
   }
   renderer.domElement.addEventListener('pointerdown', onDown)
   renderer.domElement.addEventListener('pointerup', onUp)
@@ -166,17 +203,18 @@ export function createGraphScene(container: HTMLElement, onSelect: (node: GraphN
       mesh.setMatrixAt(i, m.makeTranslation(positions.get(n.id)!))
       mesh.setColorAt(i, c.set(color(n)))
     })
-    pickables.push({ mesh, nodes })
+    nodePickables.push({ mesh, nodes })
     return mesh
   }
 
   function update(snap: GraphSnapshot, layers: Record<EdgeLayer, boolean>) {
     disposeTree(content)
     content.clear()
-    pickables = []
+    nodePickables = []
+    edgePickables = []
     for (const k of Object.keys(edgeObjects)) delete edgeObjects[k as EdgeLayer]
 
-    // Floor: hubs laid out by geography (equirectangular), scaled to FLOOR_EXTENT.
+    // Hub geography → floor layout
     const lat0 = snap.hubs.reduce((s, h) => s + h.lat, 0) / Math.max(snap.hubs.length, 1)
     const lng0 = snap.hubs.reduce((s, h) => s + h.lng, 0) / Math.max(snap.hubs.length, 1)
     const k = Math.cos((lat0 * Math.PI) / 180)
@@ -188,28 +226,37 @@ export function createGraphScene(container: HTMLElement, onSelect: (node: GraphN
       const [x, z] = hubXZ.get(hub) ?? [0, 0]
       return new THREE.Vector3(x, t * yScale, z)
     }
-    byId = new Map(snap.nodes.map((n) => [n.id, n]))
+    byId      = new Map(snap.nodes.map((n) => [n.id, n]))
     positions = new Map(snap.nodes.map((n) => [n.id, at(n.hub, n.t)]))
 
-    // Hub pillars, bases and labels.
+    // Hub pillars, bases and labels
     const pillarPts: THREE.Vector3[] = []
     for (const h of snap.hubs) {
       pillarPts.push(at(h.id, 0), at(h.id, snap.hours))
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.04, 32), new THREE.MeshBasicMaterial({ color: PATH_COLOR, transparent: true, opacity: 0.35 }))
+      const base = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.55, 0.55, 0.04, 32),
+        new THREE.MeshBasicMaterial({ color: PATH_COLOR, transparent: true, opacity: 0.35 }),
+      )
       base.position.copy(at(h.id, 0))
       content.add(base)
       const l = label(h.id, 'graph3d-label graph3d-hub')
       l.position.copy(at(h.id, 0)).add(new THREE.Vector3(0, -0.6, 0))
       content.add(l)
     }
-    const pillars = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pillarPts), new THREE.LineDashedMaterial({ color: '#A1A1AA', dashSize: 0.3, gapSize: 0.25, transparent: true, opacity: 0.45 }))
+    const pillars = new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(pillarPts),
+      new THREE.LineDashedMaterial({ color: '#A1A1AA', dashSize: 0.3, gapSize: 0.25, transparent: true, opacity: 0.45 }),
+    )
     pillars.computeLineDistances()
     content.add(pillars)
 
-    // Time ticks on an axis at the floor corner.
+    // Time-axis ticks
     const corner = new THREE.Vector3(-FLOOR_EXTENT * 0.7, 0, FLOOR_EXTENT * 0.7)
     const step = snap.hours <= 12 ? 2 : snap.hours <= 36 ? 4 : 12
-    const axis = new THREE.Line(new THREE.BufferGeometry().setFromPoints([corner, corner.clone().setY(TIME_HEIGHT)]), new THREE.LineBasicMaterial({ color: '#71717A' }))
+    const axis = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([corner, corner.clone().setY(TIME_HEIGHT)]),
+      new THREE.LineBasicMaterial({ color: '#71717A' }),
+    )
     content.add(axis)
     for (let t = 0; t <= snap.hours; t += step) {
       const l = label(`+${t}h`, 'graph3d-label graph3d-tick')
@@ -217,12 +264,16 @@ export function createGraphScene(container: HTMLElement, onSelect: (node: GraphN
       content.add(l)
     }
 
-    // Edges, one LineSegments per layer; legs coloured by vehicle.
+    // Edges — one LineSegments per layer; parallel edge array for raycasting
     const vehicleIds = [...new Set(snap.nodes.flatMap((n) => (n.vehicle_id ? [n.vehicle_id] : [])))].sort()
     const vehicleColor = new Map(vehicleIds.map((v, i) => [v, VEHICLE_COLORS[i % VEHICLE_COLORS.length]]))
-    const buckets: Record<EdgeLayer, { pts: number[]; cols: number[] }> = {
-      leg: { pts: [], cols: [] }, wait: { pts: [], cols: [] }, board: { pts: [], cols: [] },
-      unload: { pts: [], cols: [] }, onboard: { pts: [], cols: [] }, detour: { pts: [], cols: [] },
+    const buckets: Record<EdgeLayer, { pts: number[]; cols: number[]; edges: GraphEdge[] }> = {
+      leg:     { pts: [], cols: [], edges: [] },
+      wait:    { pts: [], cols: [], edges: [] },
+      board:   { pts: [], cols: [], edges: [] },
+      unload:  { pts: [], cols: [], edges: [] },
+      onboard: { pts: [], cols: [], edges: [] },
+      detour:  { pts: [], cols: [], edges: [] },
     }
     const c = new THREE.Color()
     for (const e of snap.edges) {
@@ -234,27 +285,31 @@ export function createGraphScene(container: HTMLElement, onSelect: (node: GraphN
       c.set(layer === 'leg' && e.vehicle_id ? vehicleColor.get(e.vehicle_id)! : EDGE_LAYER_META[layer].color)
       buckets[layer].pts.push(a.x, a.y, a.z, b.x, b.y, b.z)
       buckets[layer].cols.push(c.r, c.g, c.b, c.r, c.g, c.b)
+      buckets[layer].edges.push(e)
     }
-    for (const [layer, { pts, cols }] of Object.entries(buckets) as [EdgeLayer, { pts: number[]; cols: number[] }][]) {
+    for (const [layer, { pts, cols, edges }] of Object.entries(buckets) as [EdgeLayer, { pts: number[]; cols: number[]; edges: GraphEdge[] }][]) {
       const g = new THREE.BufferGeometry()
       g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3))
-      g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3))
+      g.setAttribute('color',    new THREE.Float32BufferAttribute(cols, 3))
       const opacity = layer === 'leg' ? 0.95 : layer === 'detour' ? 0.45 : 0.7
       const obj = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity }))
       edgeObjects[layer] = obj
+      edgePickables.push({ obj, edges })
       content.add(obj)
     }
 
-    // Nodes: hub timeline, vehicle (main schedule), vehicle (detour copies).
-    const hubNodes = snap.nodes.filter((n) => n.kind === 'hub')
-    const mainNodes = snap.nodes.filter((n) => n.kind !== 'hub' && !isDetour(n))
-    const detour = snap.nodes.filter((n) => isDetour(n))
+    // Nodes — spheres (dep), cubes (arr), small spheres (hub), small spheres (detour)
+    const hubNodes  = snap.nodes.filter((n) => n.kind === 'hub')
+    const depNodes  = snap.nodes.filter((n) => n.kind === 'dep' && !isDetour(n))
+    const arrNodes  = snap.nodes.filter((n) => n.kind === 'arr' && !isDetour(n))
+    const detourAll = snap.nodes.filter((n) => isDetour(n))
     content.add(nodeMesh(hubNodes, new THREE.SphereGeometry(0.11, 10, 8), () => '#A1A1AA'))
-    content.add(nodeMesh(mainNodes, new THREE.SphereGeometry(0.2, 14, 10), (n) => vehicleColor.get(n.vehicle_id!) ?? '#ffffff'))
-    detourNodes = nodeMesh(detour, new THREE.SphereGeometry(0.14, 10, 8), () => EDGE_LAYER_META.detour.color)
+    content.add(nodeMesh(depNodes, new THREE.SphereGeometry(0.2, 14, 10), (n) => vehicleColor.get(n.vehicle_id!) ?? '#ffffff'))
+    content.add(nodeMesh(arrNodes, new THREE.BoxGeometry(0.25, 0.25, 0.25), (n) => vehicleColor.get(n.vehicle_id!) ?? '#ffffff'))
+    detourNodes = nodeMesh(detourAll, new THREE.SphereGeometry(0.14, 10, 8), () => EDGE_LAYER_META.detour.color)
     content.add(detourNodes)
 
-    // Recommended recovery paths: entry → wait → legs, drawn as a lime tube.
+    // Recommended recovery paths: entry → legs → sink (lime tube + red diamond + yellow cone)
     for (const r of snap.recommendations) {
       if (!r.hub) continue
       const pts = [at(r.hub, r.t)]
@@ -264,17 +319,49 @@ export function createGraphScene(container: HTMLElement, onSelect: (node: GraphN
         pts.push(at(leg.from_hub, leg.dep_t), at(leg.to_hub, leg.arr_t))
         hub = leg.to_hub
       }
+
+      // Lime tube
       const path = new THREE.CurvePath<THREE.Vector3>()
-      for (let i = 1; i < pts.length; i++) if (!pts[i].equals(pts[i - 1])) path.add(new THREE.LineCurve3(pts[i - 1], pts[i]))
-      if (path.curves.length) {
-        content.add(new THREE.Mesh(new THREE.TubeGeometry(path, path.curves.length * 16, 0.07, 6, false), new THREE.MeshBasicMaterial({ color: PATH_COLOR })))
+      for (let i = 1; i < pts.length; i++) {
+        if (!pts[i].equals(pts[i - 1])) path.add(new THREE.LineCurve3(pts[i - 1], pts[i]))
       }
-      const entry = new THREE.Mesh(new THREE.OctahedronGeometry(0.35), new THREE.MeshLambertMaterial({ color: ENTRY_COLOR }))
+      if (path.curves.length) {
+        content.add(new THREE.Mesh(
+          new THREE.TubeGeometry(path, path.curves.length * 16, 0.07, 6, false),
+          new THREE.MeshBasicMaterial({ color: PATH_COLOR }),
+        ))
+      }
+
+      // Entry node (red octahedron)
+      const entry = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.35),
+        new THREE.MeshLambertMaterial({ color: ENTRY_COLOR }),
+      )
       entry.position.copy(pts[0])
       content.add(entry)
-      const l = label(`${r.shipment_id} entry`, 'graph3d-label graph3d-entry')
-      l.position.copy(pts[0]).add(new THREE.Vector3(0, 0.7, 0))
-      content.add(l)
+      const el = label(`${r.shipment_id} entry`, 'graph3d-label graph3d-entry')
+      el.position.copy(pts[0]).add(new THREE.Vector3(0, 0.7, 0))
+      content.add(el)
+
+      // Sink node (yellow cone at the top of destination hub)
+      const sinkPos = at(hub, snap.hours)
+      const sink = new THREE.Mesh(
+        new THREE.ConeGeometry(0.4, 0.8, 4),
+        new THREE.MeshLambertMaterial({ color: '#FFD166' }),
+      )
+      sink.position.copy(sinkPos)
+      content.add(sink)
+
+      // Dashed line from last arrival to sink
+      const sinkEdge = new THREE.LineSegments(
+        new THREE.BufferGeometry().setFromPoints([pts[pts.length - 1], sinkPos]),
+        new THREE.LineBasicMaterial({ color: '#FFD166', transparent: true, opacity: 0.5 }),
+      )
+      content.add(sinkEdge)
+
+      const sl = label(`${hub} sink`, 'graph3d-label graph3d-sink')
+      sl.position.copy(sinkPos).add(new THREE.Vector3(0, 0.8, 0))
+      content.add(sl)
     }
 
     setLayers(layers)
